@@ -78,6 +78,8 @@ record-replay/
 - Create: `record-replay/pnpm-workspace.yaml`
 - Create: `record-replay/.gitignore`
 - Create: `record-replay/packages/shared/package.json`
+- Create: `record-replay/packages/shared/tsconfig.json`
+- Create: `record-replay/packages/shared/src/index.ts`（占位，Task 4 覆盖）
 
 - [ ] **Step 1: 建目录并初始化 git**
 
@@ -115,7 +117,12 @@ cd /Users/lkz/202507/record-replay && git init
 packages:
   - 'apps/*'
   - 'packages/*'
+
+onlyBuiltDependencies:
+  - esbuild
 ```
+
+> pnpm 10 默认不执行依赖的 postinstall 脚本，`onlyBuiltDependencies` 白名单让 `esbuild` 正常安装平台二进制，否则 `vitest` 会报错。
 
 - [ ] **Step 4: 写 .gitignore**
 
@@ -126,10 +133,15 @@ dist/
 .env.*
 !.env.example
 apps/api/storage/
+docker/mysql_data/
 *.log
 .DS_Store
 unpackage/
+coverage/
+*.tsbuildinfo
 ```
+
+> `docker/mysql_data/` 是 MySQL 数据卷，必须忽略。
 
 - [ ] **Step 5: 写 packages/shared/package.json**
 
@@ -142,15 +154,48 @@ unpackage/
   "types": "src/index.ts",
   "scripts": {
     "build": "tsc --noEmit",
-    "test": "echo \"no tests\" && exit 0"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "zod": "^4.1.12"
   },
   "devDependencies": {
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^3.0.0"
   }
 }
+```
+
+- [ ] **Step 5b: 写 packages/shared/tsconfig.json**
+
+`packages/shared` 必须有 `tsconfig.json`，否则 `tsc --noEmit` 找不到配置会打印帮助并以 exit 1 退出，导致根 `pnpm -r build` 失败。
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["**/*.spec.ts"]
+}
+```
+
+> `exclude` 掉 `*.spec.ts`：tsconfig 若不排除测试文件、又没有 vitest 全局类型，`tsc --noEmit` 会因 `describe`/`it` 未定义而报错。测试文件由 vitest 在运行时处理。
+
+- [ ] **Step 5c: 写 packages/shared/src/index.ts（占位）**
+
+`tsc` 在 `include` 匹配不到任何文件时会报 `TS18003: No inputs were found`。先放一个占位文件，Task 4 会用真实导出覆盖它。
+
+```ts
+export {};
 ```
 
 - [ ] **Step 6: 安装依赖并验证**
@@ -160,11 +205,21 @@ cd /Users/lkz/202507/record-replay && pnpm install
 ```
 Expected: 生成 `pnpm-lock.yaml`，无报错。
 
+> 若本机 CI 环境变量为真导致 `ERR_PNPM_OUTDATED_LOCKFILE`，改用 `pnpm install --no-frozen-lockfile`。
+
+- [ ] **Step 6b: 验证根脚本可用（门禁）**
+
+```bash
+cd /Users/lkz/202507/record-replay
+pnpm -r build && pnpm -r test
+```
+Expected: 两条命令均 exit 0（`build` 无输出即成功；`test` 输出 `No test files found, exiting with code 0`）。
+
 - [ ] **Step 7: 提交**
 
 ```bash
 cd /Users/lkz/202507/record-replay
-git add package.json pnpm-workspace.yaml .gitignore packages/shared/package.json
+git add package.json pnpm-workspace.yaml .gitignore packages/shared/package.json packages/shared/tsconfig.json packages/shared/src/index.ts pnpm-lock.yaml
 git commit -m "chore: init pnpm workspace skeleton"
 ```
 
@@ -188,7 +243,7 @@ services:
       MYSQL_ROOT_PASSWORD: recordreplay
       MYSQL_DATABASE: record_replay
     ports:
-      - "3316:3306"
+      - "127.0.0.1:3316:3306"
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     volumes:
       - ./mysql_data:/var/lib/mysql
@@ -202,7 +257,7 @@ services:
     image: redis:7-alpine
     container_name: record-replay-redis
     ports:
-      - "6389:6379"
+      - "127.0.0.1:6389:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -544,12 +599,13 @@ git commit -m "feat(api): bootstrap nestjs with typeorm and health check"
 
 **Files:**
 - Create: `packages/shared/src/dto.ts`
-- Create: `packages/shared/src/index.ts`
+- Modify: `packages/shared/src/index.ts`（Task 1 已建占位 `export {};`，此处改为真实导出）
 - Test: `packages/shared/src/dto.spec.ts`
 
 - [ ] **Step 1: 写失败测试 dto.spec.ts**
 
 ```ts
+import { describe, it, expect } from 'vitest';
 import { PhoneSchema, SendCodeSchema, LoginSchema, AskSchema, TaskStatusSchema } from './dto';
 
 describe('shared dto', () => {
@@ -584,9 +640,9 @@ describe('shared dto', () => {
 
 ```bash
 cd /Users/lkz/202507/record-replay/packages/shared
-pnpm dlx jest src/dto.spec.ts
+pnpm exec vitest run src/dto.spec.ts
 ```
-Expected: FAIL，报 `Cannot find module './dto'`。
+Expected: FAIL，报 `Failed to load ... src/dto.ts`（模块 `./dto` 不存在）。
 
 - [ ] **Step 3: 写 dto.ts**
 
@@ -621,9 +677,9 @@ export * from './dto';
 - [ ] **Step 5: 跑测试确认通过**
 
 ```bash
-pnpm dlx jest src/dto.spec.ts
+pnpm exec vitest run src/dto.spec.ts
 ```
-Expected: `Tests: 5 passed`
+Expected: `Test Files  1 passed (1)` / `Tests  5 passed (5)`
 
 - [ ] **Step 6: 提交**
 
