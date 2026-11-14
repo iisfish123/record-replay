@@ -2791,3 +2791,25 @@ git commit -m "test: add end-to-end smoke script"
 - **规格覆盖**：设计文档 §5 七个模块 → Task 3/5/6（Auth）、Task 7（Media）、Task 8（Persona）、Task 11（Voice）、Task 9（Chat）、Task 12（Render）、Task 13（Task）全部落地；§3 的五条硬约束 → 分别落在 Task 9（限长）、Task 7（图片 5MB 校验）、Task 12/13（1 小时转存）、Task 12（审核错误码映射）、Task 12（保留水印，不处理 aigc_meta 即默认保留）。
 - **占位符扫描**：无 TBD/TODO。`Task 13 Step 4` 故意保留一段错误实现用于「先看测试失败」，并在 Step 5 给出最终版并显式说明，不是占位符。
 - **类型一致性**：`CHAT_PROVIDER` / `VOICE_PROVIDER` / `RENDER_PROVIDER` 三个 Symbol 在 Task 9/11/12 定义、Task 13 使用，名称一致；`Persona['status']` 与 `PERSONA_STATUS` 取值一致；`toPublicUrl` / `STORAGE_ROOT` 在 Task 7 定义、Task 13 复用。
+
+---
+
+## 技术债登记（Task 5-6 代码质量审查，2026-11-14）
+
+> Demo 里程碑决策：以下审查项本次**不修**，登记为技术债，Demo 上线前需逐条评估。
+> 状态：⏳ 未处理
+
+| # | 严重度 | 位置 | 问题 | 建议修复 |
+|---|--------|------|------|----------|
+| D1 | Important | `apps/api/src/auth/auth.controller.ts`、`sms.service.ts` | `/auth/sms/send` 无任何频控/限流；该接口未鉴权且触发真实付费短信，公网部署有被刷风险。设计规格 §API 表要求「Redis 存码 + 频控」，计划漏写 | 接入 `@nestjs/throttler`（Redis storage）或按 `phone`+IP 的 Redis 计数器；补 AuthModule 频控单测 |
+| D2 | Important | `apps/api/src/auth/jwt.guard.ts` | 安全关键组件零测试（缺令牌/坏令牌/过期令牌分支未覆盖） | 补 `jwt.guard.spec.ts` 三例，或在 e2e 用受保护路由做鉴权断言 |
+| D3 | Important | `apps/api/test/auth.e2e-spec.ts` | e2e 连真实 MySQL 并持久化测试用户，单测与 e2e 共用 jest 配置，CI/无库环境会失败 | e2e 用独立测试库或事务回滚/testcontainers；拆分 jest 配置 |
+| D4 | Minor | `apps/api/src/auth/sms.service.ts` `check()` | 把「验证码错误」与「阿里云调用异常」统一返回 `false`，网络异常误报 401 | 区分异常，抛 `BadGatewayException` |
+| D5 | Minor | `apps/api/src/auth/sms.service.ts` `send()` | 抛裸 `Error`（→500）且错误信息带 provider 原始响应体 | 抛 `BadGatewayException/ServiceUnavailableException`，不携带原始响应体 |
+| D6 | Minor | `apps/api/src/auth/auth.service.ts` `login()` | 先 `findOne` 再 `save` 存在并发首登竞态，撞唯一约束 →500 | 改 `upsert`/`ON CONFLICT`，或捕获重复键重查 |
+| D7 | Minor | `apps/api/src/auth/sms.service.ts` | 验证码用 `Math.random()`（非密码学安全） | 改 `crypto.randomInt` |
+| D8 | Minor | `apps/api/src/auth/auth.module.ts` | `@Global()` 导出面偏大，拓宽耦合面 | 仅导出必要项或让使用方显式 import |
+| D9 | Minor | `apps/api/src/auth/auth.controller.ts` | 两处重复 `safeParse`+首条错误，只回传 `issues[0]` | 抽 `ZodValidationPipe` |
+| D10 | Minor | `apps/api/src/auth/sms.service.ts` | `SmsClient` 返回 `Promise<any>` 丢失类型安全 | 标注返回结构 |
+| D11 | Minor | `apps/api/src/auth/auth.module.ts` | 未校验阿里云密钥为空 | 启动时校验必填配置 |
+| D12 | Minor | `apps/api/src/app.module.ts` | `synchronize: true` 自动 DDL（既有模式，本次引入真实表 `users`） | 生产切 TypeORM 迁移 |
