@@ -2813,3 +2813,15 @@ git commit -m "test: add end-to-end smoke script"
 | D10 | Minor | `apps/api/src/auth/sms.service.ts` | `SmsClient` 返回 `Promise<any>` 丢失类型安全 | 标注返回结构 |
 | D11 | Minor | `apps/api/src/auth/auth.module.ts` | 未校验阿里云密钥为空 | 启动时校验必填配置 |
 | D12 | Minor | `apps/api/src/app.module.ts` | `synchronize: true` 自动 DDL（既有模式，本次引入真实表 `users`） | 生产切 TypeORM 迁移 |
+
+### Task 7-8 代码质量审查（2026-11-14）
+
+> 用户决策：本次仅修复「persona 请求体校验」+「安全分支 e2e」两项（见提交 `80459a4`），其余登记为技术债。
+
+| # | 严重度 | 位置 | 问题 | 建议修复 |
+|---|--------|------|------|----------|
+| D13 | Important | `apps/api/src/media/media.controller.ts`、`media.service.ts` | 音频上传无大小上限，`FileInterceptor` 未传 `limits`，multer 默认无限且整文件先入内存再校验（内存耗尽/磁盘打满） | 给 `FileInterceptor` 传 `limits: { fileSize }`（图片 5MB、音频 ~15-20MB），让 multer 流式拒绝 |
+| D14 | Important | `apps/api/src/media/media.controller.ts`、`main.ts` | 无 MIME/扩展名白名单，任意文件被当 audio 接受并保留原扩展名，经同源 `/static` 公网暴露 → 存储型 XSS/任意内容托管 | 白名单校验扩展名 + magic bytes，或统一落盘为白名单扩展 |
+| D15 | Minor | `docs/superpowers/specs/…design.md` §7 vs plan Task 8 | 设计规格要求 `POST /personas` 为 multipart(`avatar`+`voice`) 单入口并「创建人格 + 触发音色训练」；计划拆成 `POST /media/upload` + JSON `POST /personas` 且不触发训练。拆分更清晰，但未履行规格的单一入口与训练编排 | 在计划中确认该偏差，并在 VoiceModule（Task 11）落地训练触发，避免前端契约漂移 |
+| D16 | Minor | `apps/api/src/persona/entities/persona.entity.ts` | `userId` 无 FK/索引（规格 §6 标 FK→User）；控制器直接返回原始实体，暴露 `userId`/`speakerId`/`error` | 加 FK/索引；响应改 DTO 投影 |
+| D17 | Minor | `apps/api/src/media/media.controller.ts`、`persona.controller.ts` | 重复 `!file` 守卫；`req: any` 丢类型；`publicBaseUrl` 非空断言 | 抽 `AuthenticatedRequest` 类型；去重复守卫 |
