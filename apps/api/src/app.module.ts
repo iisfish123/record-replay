@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import configuration from './config/configuration';
 import { HealthController } from './health/health.controller';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { HealthController } from './health/health.controller';
         timezone: 'Z',
       }),
     }),
+    AuthModule,
   ],
   controllers: [HealthController],
 })
