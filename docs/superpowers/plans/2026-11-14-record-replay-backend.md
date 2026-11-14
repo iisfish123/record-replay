@@ -94,7 +94,7 @@ cd /Users/lkz/202507/record-replay && git init
 {
   "name": "record-replay",
   "private": true,
-  "packageManager": "pnpm@9.15.0",
+  "packageManager": "pnpm@10.20.0",
   "scripts": {
     "infra:up": "docker compose -f docker/docker-compose.yml up -d",
     "infra:down": "docker compose -f docker/docker-compose.yml down",
@@ -178,6 +178,8 @@ git commit -m "chore: init pnpm workspace skeleton"
 - [ ] **Step 1: 写 docker-compose.yml**
 
 ```yaml
+name: record-replay
+
 services:
   mysql:
     image: mysql:8.4
@@ -191,7 +193,7 @@ services:
     volumes:
       - ./mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-precordplay"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-precordreplay"]
       interval: 5s
       timeout: 5s
       retries: 20
