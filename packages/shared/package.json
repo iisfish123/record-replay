@@ -6,12 +6,13 @@
   "types": "src/index.ts",
   "scripts": {
     "build": "tsc --noEmit",
-    "test": "echo \"no tests\" && exit 0"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "zod": "^4.1.12"
   },
   "devDependencies": {
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^3.0.0"
   }
 }

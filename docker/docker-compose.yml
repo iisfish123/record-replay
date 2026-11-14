@@ -8,7 +8,7 @@ services:
       MYSQL_ROOT_PASSWORD: recordreplay
       MYSQL_DATABASE: record_replay
     ports:
-      - "3316:3306"
+      - "127.0.0.1:3316:3306"
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     volumes:
       - ./mysql_data:/var/lib/mysql
@@ -22,7 +22,7 @@ services:
     image: redis:7-alpine
     container_name: record-replay-redis
     ports:
-      - "6389:6379"
+      - "127.0.0.1:6389:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
