@@ -7,6 +7,11 @@ export const SendCodeSchema = z.object({ phone: PhoneSchema });
 export const LoginSchema = z.object({ phone: PhoneSchema, code: CodeSchema });
 export const AskSchema = z.object({ question: z.string().min(1).max(200) });
 
+export const CreatePersonaSchema = z.object({
+  avatarUrl: z.string().min(1).max(512),
+  voiceSampleUrl: z.string().min(1).max(512),
+});
+
 export const PersonaStatusSchema = z.enum(['pending', 'training', 'ready', 'failed']);
 export const TaskStatusSchema = z.enum([
   'pending', 'answering', 'tts', 'rendering', 'done', 'failed',
@@ -15,5 +20,6 @@ export const TaskStatusSchema = z.enum([
 export type SendCodeDto = z.infer<typeof SendCodeSchema>;
 export type LoginDto = z.infer<typeof LoginSchema>;
 export type AskDto = z.infer<typeof AskSchema>;
+export type CreatePersonaDto = z.infer<typeof CreatePersonaSchema>;
 export type PersonaStatus = z.infer<typeof PersonaStatusSchema>;
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;

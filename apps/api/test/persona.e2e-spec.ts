@@ -1,12 +1,14 @@
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import { randomUUID } from 'node:crypto';
 import { AppModule } from '../src/app.module';
 import { SMS_CLIENT } from '../src/auth/sms.service';
 
 describe('persona e2e', () => {
   let app: INestApplication;
   let token: string;
+  let token2: string;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
@@ -22,6 +24,10 @@ describe('persona e2e', () => {
       .post('/auth/sms/login')
       .send({ phone: '15920328477', code: '123456' });
     token = res.body.token;
+    const res2 = await request(app.getHttpServer())
+      .post('/auth/sms/login')
+      .send({ phone: '15920328478', code: '123456' });
+    token2 = res2.body.token;
   });
 
   afterAll(async () => {
@@ -48,5 +54,32 @@ describe('persona e2e', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     expect(res.body.id).toBe(created.body.id);
+  });
+
+  it('缺少 voiceSampleUrl -> 400', async () => {
+    await request(app.getHttpServer())
+      .post('/personas')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ avatarUrl: 'http://x/a.jpg' })
+      .expect(400);
+  });
+
+  it('查询不存在的人格 -> 404', async () => {
+    await request(app.getHttpServer())
+      .get(`/personas/${randomUUID()}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404);
+  });
+
+  it('访问他人人格 -> 403', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/personas')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ avatarUrl: 'http://x/a.jpg', voiceSampleUrl: 'http://x/v.mp3' })
+      .expect(201);
+    await request(app.getHttpServer())
+      .get(`/personas/${created.body.id}`)
+      .set('Authorization', `Bearer ${token2}`)
+      .expect(403);
   });
 });

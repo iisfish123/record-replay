@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { CreatePersonaSchema } from '@record-replay/shared';
 import { JwtGuard } from '../auth/jwt.guard';
 import { PersonaService } from './persona.service';
 
@@ -8,8 +9,10 @@ export class PersonaController {
   constructor(private readonly personas: PersonaService) {}
 
   @Post()
-  async create(@Req() req: any, @Body() body: { avatarUrl: string; voiceSampleUrl: string }) {
-    return this.personas.create(req.user.sub, body.avatarUrl, body.voiceSampleUrl);
+  async create(@Req() req: any, @Body() body: unknown) {
+    const parsed = CreatePersonaSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0].message);
+    return this.personas.create(req.user.sub, parsed.data.avatarUrl, parsed.data.voiceSampleUrl);
   }
 
   @Get(':id')

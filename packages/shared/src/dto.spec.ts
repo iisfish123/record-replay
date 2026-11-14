@@ -4,6 +4,7 @@ import {
   SendCodeSchema,
   LoginSchema,
   AskSchema,
+  CreatePersonaSchema,
   PersonaStatusSchema,
   TaskStatusSchema,
 } from './dto';
@@ -31,6 +32,18 @@ describe('shared dto', () => {
     expect(AskSchema.safeParse({ question: '爸爸，你最近还好吗？' }).success).toBe(true);
     expect(AskSchema.safeParse({ question: '' }).success).toBe(false);
     expect(AskSchema.safeParse({ question: 'x'.repeat(201) }).success).toBe(false);
+  });
+
+  it('创建人格需 avatarUrl 与 voiceSampleUrl 且不超过 512 字', () => {
+    expect(
+      CreatePersonaSchema.safeParse({ avatarUrl: 'http://x/a.jpg', voiceSampleUrl: 'http://x/v.mp3' })
+        .success,
+    ).toBe(true);
+    expect(CreatePersonaSchema.safeParse({ avatarUrl: 'http://x/a.jpg' }).success).toBe(false);
+    expect(
+      CreatePersonaSchema.safeParse({ avatarUrl: 'x'.repeat(513), voiceSampleUrl: 'http://x/v.mp3' })
+        .success,
+    ).toBe(false);
   });
 
   it('人物状态枚举完整', () => {
