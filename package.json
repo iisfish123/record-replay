@@ -1,0 +1,16 @@
+{
+  "name": "record-replay",
+  "private": true,
+  "packageManager": "pnpm@10.20.0",
+  "scripts": {
+    "infra:up": "docker compose -f docker/docker-compose.yml up -d",
+    "infra:down": "docker compose -f docker/docker-compose.yml down",
+    "dev:api": "pnpm --filter @record-replay/api start:dev",
+    "dev:app": "pnpm --filter @record-replay/app dev:h5",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
