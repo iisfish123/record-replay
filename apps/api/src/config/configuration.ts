@@ -1,3 +1,5 @@
+export const DEFAULT_JWT_SECRET = 'dev-secret-change-me';
+
 export interface AppConfig {
   port: number;
   publicBaseUrl: string;
@@ -15,7 +17,7 @@ export interface AppConfig {
 export default (): AppConfig => ({
   port: parseInt(process.env.PORT ?? '3000', 10),
   publicBaseUrl: process.env.PUBLIC_BASE_URL ?? 'http://127.0.0.1:3000',
-  jwtSecret: process.env.JWT_SECRET ?? 'dev-secret-change-me',
+  jwtSecret: process.env.JWT_SECRET ?? DEFAULT_JWT_SECRET,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '7d',
   mysql: {
     host: process.env.MYSQL_HOST ?? '127.0.0.1',
