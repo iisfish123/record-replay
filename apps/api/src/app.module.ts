@@ -5,6 +5,7 @@ import configuration from './config/configuration';
 import { HealthController } from './health/health.controller';
 import { AuthModule } from './auth/auth.module';
 import { MediaModule } from './media/media.module';
+import { PersonaModule } from './persona/persona.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { MediaModule } from './media/media.module';
     }),
     AuthModule,
     MediaModule,
+    PersonaModule,
   ],
   controllers: [HealthController],
 })
