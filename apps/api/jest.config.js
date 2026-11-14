@@ -5,4 +5,7 @@ module.exports = {
   transform: { '^.+\\.ts$': 'ts-jest' },
   testEnvironment: 'node',
   testTimeout: 30000,
+  moduleNameMapper: {
+    '^@record-replay/shared$': '<rootDir>/../../packages/shared/src/index.ts',
+  },
 };
