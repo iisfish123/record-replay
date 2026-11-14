@@ -100,7 +100,7 @@ cd /Users/lkz/202507/record-replay && git init
   "scripts": {
     "infra:up": "docker compose -f docker/docker-compose.yml up -d",
     "infra:down": "docker compose -f docker/docker-compose.yml down",
-    "dev:api": "pnpm --filter @record-replay/api start:dev",
+    "dev:api": "pnpm --filter @record-replay/shared build && pnpm --filter @record-replay/api start:dev",
     "dev:app": "pnpm --filter @record-replay/app dev:h5",
     "build": "pnpm -r build",
     "test": "pnpm -r test"
@@ -150,10 +150,13 @@ coverage/
   "name": "@record-replay/shared",
   "version": "0.0.1",
   "private": true,
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "build": "tsc --noEmit",
+    "build": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
@@ -166,9 +169,11 @@ coverage/
 }
 ```
 
+> **必须编译成 JS**：`apps/api` 是编译后由 Node 运行的（`nest build` → `node dist/main.js`）。若 `main`/`types` 指向 `src/index.ts` 这种 TS 源码，Node 运行时会解析到 `.ts` 并抛错（TS 语法 / ESM 扩展名解析失败）。所以 `shared` 必须自带构建产物，`main` 指向 `dist/index.js`、`types` 指向 `dist/index.d.ts`。根 `pnpm -r build` 会按拓扑序**先构建 shared 再构建 api**。
+
 - [ ] **Step 5b: 写 packages/shared/tsconfig.json**
 
-`packages/shared` 必须有 `tsconfig.json`，否则 `tsc --noEmit` 找不到配置会打印帮助并以 exit 1 退出，导致根 `pnpm -r build` 失败。
+`packages/shared` 必须有 `tsconfig.json`，否则 `tsc` 找不到配置会打印帮助并以 exit 1 退出，导致根 `pnpm -r build` 失败。
 
 ```json
 {
@@ -178,17 +183,20 @@ coverage/
     "module": "commonjs",
     "moduleResolution": "node",
     "strict": true,
-    "noEmit": true,
+    "declaration": true,
+    "outDir": "dist",
+    "rootDir": "src",
     "skipLibCheck": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true
   },
   "include": ["src/**/*"],
-  "exclude": ["**/*.spec.ts"]
+  "exclude": ["**/*.spec.ts", "dist"]
 }
 ```
 
-> `exclude` 掉 `*.spec.ts`：tsconfig 若不排除测试文件、又没有 vitest 全局类型，`tsc --noEmit` 会因 `describe`/`it` 未定义而报错。测试文件由 vitest 在运行时处理。
+> 产出 CJS + 类型声明到 `dist/`：`declaration: true` 生成 `.d.ts` 供 api 类型检查，`outDir`/`rootDir` 明确输出到 `dist/index.js`。
+> `exclude` 掉 `*.spec.ts`：tsconfig 若不排除测试文件、又没有 vitest 全局类型，`tsc` 会因 `describe`/`it` 未定义而报错。测试文件由 vitest 在运行时处理。
 
 - [ ] **Step 5c: 写 packages/shared/src/index.ts（占位）**
 
@@ -296,6 +304,7 @@ git commit -m "chore: add mysql and redis compose"
 **Files:**
 - Create: `apps/api/package.json`
 - Create: `apps/api/tsconfig.json`
+- Create: `apps/api/tsconfig.build.json`
 - Create: `apps/api/jest.config.js`
 - Create: `apps/api/src/main.ts`
 - Create: `apps/api/src/app.module.ts`
@@ -377,6 +386,17 @@ git commit -m "chore: add mysql and redis compose"
   "include": ["src/**/*", "test/**/*"]
 }
 ```
+
+- [ ] **Step 2b: 写 apps/api/tsconfig.build.json**
+
+```json
+{
+  "extends": "./tsconfig.json",
+  "exclude": ["node_modules", "test", "dist", "**/*.spec.ts"]
+}
+```
+
+> `nest build`/`nest start` 默认使用 `tsconfig.build.json`。若不排除 `test/`，`rootDir` 会被推断为 `apps/api`，产物落到 `dist/src/main.js`，`nest start` 找 `dist/main.js` 会失败。排除测试后产物回到标准的 `dist/main.js`。
 
 - [ ] **Step 3: 写 configuration.ts**
 
@@ -545,15 +565,20 @@ module.exports = {
   transform: { '^.+\\.ts$': 'ts-jest' },
   testEnvironment: 'node',
   testTimeout: 30000,
+  moduleNameMapper: {
+    '^@record-replay/shared$': '<rootDir>/../../packages/shared/src/index.ts',
+  },
 };
 ```
+
+> `moduleNameMapper` 把 `@record-replay/shared` 指到源码，让 api 的测试直接用 ts-jest 编译源码，无需先构建 `packages/shared/dist`。
 
 - [ ] **Step 9: 写失败测试 test/health.e2e-spec.ts**
 
 ```ts
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest';
 import { AppModule } from '../src/app.module';
 
 describe('health', () => {
@@ -861,7 +886,7 @@ export class User {
 ```ts
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { SMS_CLIENT } from '../src/auth/sms.service';
 
@@ -1148,7 +1173,7 @@ export function toPublicUrl(publicBaseUrl: string, relativePath: string): string
 ```ts
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest';
 import { AppModule } from '../src/app.module';
 
 describe('media e2e', () => {
@@ -1384,7 +1409,7 @@ export class PersonaService {
 ```ts
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { SMS_CLIENT } from '../src/auth/sms.service';
 
@@ -2243,7 +2268,7 @@ export class RenderTask {
 ```ts
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { SMS_CLIENT } from '../src/auth/sms.service';
 import { CHAT_PROVIDER } from '../src/providers/chat/chat.provider';
