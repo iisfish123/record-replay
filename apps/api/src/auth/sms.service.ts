@@ -23,12 +23,12 @@ export class SmsService {
   ) {}
 
   async send(phone: string): Promise<void> {
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    // 验证码必须交由阿里云动态生成（占位符 ##code##），否则 CheckSmsVerifyCode 无法校验
     const req = new $Dypnsapi.SendSmsVerifyCodeRequest({
       phoneNumber: phone,
       signName: this.options.signName,
       templateCode: this.options.templateCode,
-      templateParam: JSON.stringify({ code, min: '5' }),
+      templateParam: JSON.stringify({ code: '##code##', min: '5' }),
     });
     const resp = await this.client.sendSmsVerifyCodeWithOptions(req, new $Util.RuntimeOptions({}));
     const bodyCode = resp?.body?.code ?? resp?.body?.Code;
@@ -44,6 +44,10 @@ export class SmsService {
       countryCode: '86',
     });
     const resp = await this.client.checkSmsVerifyCodeWithOptions(req, new $Util.RuntimeOptions({}));
-    return (resp?.body?.code ?? resp?.body?.Code) === 'OK';
+    const body = resp?.body ?? {};
+    const code = body.code ?? body.Code;
+    // 核验结果仅以 Model.VerifyResult（PASS/UNKNOWN）为准；Code=OK 只代表请求成功
+    const result = body.model?.verifyResult ?? body.Model?.VerifyResult;
+    return code === 'OK' && result === 'PASS';
   }
 }
