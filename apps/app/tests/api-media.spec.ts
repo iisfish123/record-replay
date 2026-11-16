@@ -3,49 +3,53 @@ import { uploadFile } from '../src/api/media';
 import { setAuthToken } from '../src/api/request';
 import { API_BASE_URL } from '../src/config';
 
-const uniUpload = uni.uploadFile as unknown as ReturnType<typeof vi.fn>;
+const fetchMock = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
-  uniUpload.mockReset();
+  fetchMock.mockReset();
   setAuthToken(null);
 });
 
+function mockResponse(status: number, body: string) {
+  fetchMock.mockResolvedValue(
+    new Response(body, { status, headers: { 'Content-Type': 'application/json' } }),
+  );
+}
+
 describe('media api', () => {
+  const file = new File(['hello'], 'a.jpg', { type: 'image/jpeg' });
+
   it('上传成功后解析 JSON 结果', async () => {
-    uniUpload.mockImplementation((opts: any) =>
-      opts.success({ statusCode: 200, data: JSON.stringify({ url: '/static/uploads/a.jpg', kind: 'image' }) }),
-    );
-    await expect(uploadFile('/tmp/a.jpg')).resolves.toEqual({
+    mockResponse(200, JSON.stringify({ url: '/static/uploads/a.jpg', kind: 'image' }));
+    await expect(uploadFile(file)).resolves.toEqual({
       url: '/static/uploads/a.jpg',
       kind: 'image',
     });
   });
 
-  it('拼上基址、name=file、带 token', async () => {
+  it('拼上基址、POST、带 token，body 为 FormData', async () => {
     setAuthToken('jwt-1');
-    uniUpload.mockImplementation((opts: any) =>
-      opts.success({ statusCode: 200, data: JSON.stringify({ url: '/x', kind: 'audio' }) }),
-    );
-    await uploadFile('/tmp/v.mp3');
-    const arg = uniUpload.mock.calls[0][0];
-    expect(arg.url).toBe(`${API_BASE_URL}/media/upload`);
-    expect(arg.name).toBe('file');
-    expect(arg.filePath).toBe('/tmp/v.mp3');
-    expect(arg.header.Authorization).toBe('Bearer jwt-1');
+    mockResponse(200, JSON.stringify({ url: '/x', kind: 'audio' }));
+    await uploadFile(file);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`${API_BASE_URL}/media/upload`);
+    expect(init.method).toBe('POST');
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer jwt-1');
+    expect(init.body).toBeInstanceOf(FormData);
   });
 
   it('非 2xx 时 reject', async () => {
-    uniUpload.mockImplementation((opts: any) => opts.success({ statusCode: 413, data: 'too large' }));
-    await expect(uploadFile('/tmp/big.mp4')).rejects.toThrow('上传失败（413）');
+    mockResponse(413, 'too large');
+    await expect(uploadFile(file)).rejects.toThrow('上传失败（413）');
   });
 
   it('响应不是 JSON 时 reject', async () => {
-    uniUpload.mockImplementation((opts: any) => opts.success({ statusCode: 200, data: 'not-json' }));
-    await expect(uploadFile('/tmp/a.jpg')).rejects.toThrow('上传响应解析失败');
+    mockResponse(200, 'not-json');
+    await expect(uploadFile(file)).rejects.toThrow('上传响应解析失败');
   });
 
-  it('fail 时 reject', async () => {
-    uniUpload.mockImplementation((opts: any) => opts.fail({ errMsg: 'uploadFile:fail' }));
-    await expect(uploadFile('/tmp/a.jpg')).rejects.toThrow('uploadFile:fail');
+  it('网络错误时 reject', async () => {
+    fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+    await expect(uploadFile(file)).rejects.toThrow('上传失败');
   });
 });

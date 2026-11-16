@@ -6,34 +6,36 @@ export interface UploadResult {
   kind: 'image' | 'audio';
 }
 
-interface UniUploadSuccess {
-  statusCode: number;
-  data: string;
-}
+export async function uploadFile(
+  file: File | Blob,
+  name = 'file',
+  filename?: string,
+): Promise<UploadResult> {
+  const formData = new FormData();
+  formData.append(name, file, filename);
 
-export function uploadFile(filePath: string, name = 'file'): Promise<UploadResult> {
+  const headers: Record<string, string> = {};
   const token = getAuthToken();
-  return new Promise<UploadResult>((resolve, reject) => {
-    uni.uploadFile({
-      url: `${API_BASE_URL}/media/upload`,
-      filePath,
-      name,
-      header: token ? { Authorization: `Bearer ${token}` } : {},
-      success: (raw: unknown) => {
-        const res = raw as UniUploadSuccess;
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          try {
-            resolve(JSON.parse(res.data) as UploadResult);
-          } catch {
-            reject(new Error('上传响应解析失败'));
-          }
-        } else {
-          reject(new Error(`上传失败（${res.statusCode}）`));
-        }
-      },
-      fail: (err: unknown) => {
-        reject(new Error((err as { errMsg?: string })?.errMsg ?? '上传失败'));
-      },
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/media/upload`, {
+      method: 'POST',
+      headers,
+      body: formData,
     });
-  });
+  } catch {
+    throw new Error('上传失败');
+  }
+
+  const text = await res.text();
+  if (res.status >= 200 && res.status < 300) {
+    try {
+      return JSON.parse(text) as UploadResult;
+    } catch {
+      throw new Error('上传响应解析失败');
+    }
+  }
+  throw new Error(`上传失败（${res.status}）`);
 }

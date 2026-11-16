@@ -1,25 +1,17 @@
 import { ref, onUnmounted } from 'vue';
 
-interface RecorderStopResult {
-  tempFilePath: string;
-}
-
-export interface RecorderManagerLike {
-  start(options: { duration: number; format: string }): void;
-  stop(): void;
-  onStop(cb: (res: RecorderStopResult) => void): void;
-  onError(cb: (err: { errMsg?: string }) => void): void;
-}
-
 export const MAX_RECORD_SECONDS = 20;
 
 export function useRecorder(maxSeconds = MAX_RECORD_SECONDS) {
   const recording = ref(false);
   const seconds = ref(0);
-  const tempFilePath = ref('');
-  let timer: ReturnType<typeof setInterval> | null = null;
+  const tempFile = ref<File | null>(null);
+  const error = ref('');
 
-  const manager = uni.getRecorderManager() as unknown as RecorderManagerLike;
+  let mediaRecorder: MediaRecorder | null = null;
+  let chunks: Blob[] = [];
+  let stream: MediaStream | null = null;
+  let timer: ReturnType<typeof setInterval> | null = null;
 
   function stopTimer() {
     if (timer) {
@@ -28,35 +20,64 @@ export function useRecorder(maxSeconds = MAX_RECORD_SECONDS) {
     }
   }
 
-  manager.onStop((res) => {
-    recording.value = false;
-    stopTimer();
-    tempFilePath.value = res.tempFilePath;
-  });
+  function cleanupStream() {
+    if (stream) {
+      stream.getTracks().forEach((t) => t.stop());
+      stream = null;
+    }
+  }
 
-  manager.onError((err) => {
-    recording.value = false;
-    stopTimer();
-    uni.showToast({ title: err?.errMsg ?? '录音失败', icon: 'none' });
-  });
+  async function start() {
+    if (recording.value) return;
+    error.value = '';
+    tempFile.value = null;
+    chunks = [];
 
-  function start() {
-    tempFilePath.value = '';
-    seconds.value = 0;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      error.value = '无法获取麦克风权限';
+      throw new Error('无法获取麦克风权限');
+    }
+
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunks.push(e.data);
+    };
+    mediaRecorder.onstop = () => {
+      const mime = mediaRecorder?.mimeType || 'audio/webm';
+      const blob = new Blob(chunks, { type: mime });
+      const ext = mime.includes('mp4') ? 'm4a' : mime.includes('webm') ? 'webm' : 'ogg';
+      tempFile.value = new File([blob], `voice-${Date.now()}.${ext}`, { type: mime });
+      cleanupStream();
+    };
+    mediaRecorder.onerror = () => {
+      error.value = '录音失败';
+      cleanupStream();
+    };
+
+    mediaRecorder.start();
     recording.value = true;
-    manager.start({ duration: maxSeconds * 1000, format: 'mp3' });
+    seconds.value = 0;
     stopTimer();
     timer = setInterval(() => {
       seconds.value += 1;
-      if (seconds.value >= maxSeconds) manager.stop();
+      if (seconds.value >= maxSeconds) stop();
     }, 1000);
   }
 
   function stop() {
-    if (recording.value) manager.stop();
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+    }
+    recording.value = false;
+    stopTimer();
   }
 
-  onUnmounted(stopTimer);
+  onUnmounted(() => {
+    stop();
+    cleanupStream();
+  });
 
-  return { recording, seconds, tempFilePath, start, stop, maxSeconds };
+  return { recording, seconds, tempFile, error, start, stop, maxSeconds };
 }

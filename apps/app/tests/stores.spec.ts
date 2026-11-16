@@ -10,9 +10,7 @@ const mockedLogin = apiLogin as unknown as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   setActivePinia(createPinia());
-  uni.removeStorageSync('token');
-  uni.removeStorageSync('userId');
-  uni.removeStorageSync('personaId');
+  localStorage.clear();
   mockedLogin.mockReset();
 });
 
@@ -28,8 +26,8 @@ describe('auth store', () => {
     await store.login('15920328477', '123456');
     expect(store.token).toBe('jwt-1');
     expect(store.userId).toBe('u-1');
-    expect(uni.getStorageSync('token')).toBe('jwt-1');
-    expect(uni.getStorageSync('userId')).toBe('u-1');
+    expect(localStorage.getItem('token')).toBe('jwt-1');
+    expect(localStorage.getItem('userId')).toBe('u-1');
   });
 
   it('setSession 会同步 token 到 request 层', async () => {
@@ -44,12 +42,12 @@ describe('auth store', () => {
     store.setSession('jwt-3', 'u-3');
     store.logout();
     expect(store.token).toBe('');
-    expect(uni.getStorageSync('token')).toBe('');
+    expect(localStorage.getItem('token')).toBeNull();
   });
 
   it('从 storage 恢复 token', () => {
-    uni.setStorageSync('token', 'restored');
-    uni.setStorageSync('userId', 'u-9');
+    localStorage.setItem('token', 'restored');
+    localStorage.setItem('userId', 'u-9');
     const store = useAuthStore();
     expect(store.token).toBe('restored');
     expect(store.userId).toBe('u-9');
@@ -66,14 +64,14 @@ describe('session store', () => {
     const store = useSessionStore();
     store.setPersona('p-1');
     expect(store.personaId).toBe('p-1');
-    expect(uni.getStorageSync('personaId')).toBe('p-1');
+    expect(localStorage.getItem('personaId')).toBe('p-1');
   });
 
   it('setTask 记录 taskId（不持久化）', () => {
     const store = useSessionStore();
     store.setTask('t-1');
     expect(store.taskId).toBe('t-1');
-    expect(uni.getStorageSync('taskId')).toBe('');
+    expect(localStorage.getItem('taskId')).toBeNull();
   });
 
   it('reset 清空并删除持久化', () => {
@@ -83,13 +81,12 @@ describe('session store', () => {
     store.reset();
     expect(store.personaId).toBe('');
     expect(store.taskId).toBe('');
-    expect(uni.getStorageSync('personaId')).toBe('');
+    expect(localStorage.getItem('personaId')).toBeNull();
   });
 
   it('从 storage 恢复 personaId', () => {
-    uni.setStorageSync('personaId', 'p-restored');
+    localStorage.setItem('personaId', 'p-restored');
     const store = useSessionStore();
     expect(store.personaId).toBe('p-restored');
-    uni.removeStorageSync('personaId');
   });
 });

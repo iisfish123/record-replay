@@ -19,39 +19,46 @@ export interface RequestOptions {
   header?: Record<string, string>;
 }
 
-interface UniSuccessResponse {
-  statusCode: number;
-  data: unknown;
+export async function request<T>(options: RequestOptions): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+    ...options.header,
+  };
+
+  const init: RequestInit = {
+    method: options.method ?? 'GET',
+    headers,
+  };
+
+  if (options.data !== undefined && init.method !== 'GET') {
+    init.body = JSON.stringify(options.data);
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${options.url}`, init);
+  } catch {
+    throw new Error('网络请求失败');
+  }
+
+  const text = await res.text();
+  const data = parseJsonSafe(text);
+
+  if (res.status >= 200 && res.status < 300) {
+    return data as T;
+  }
+
+  throw new Error(extractMessage(data, res.status));
 }
 
-interface UniFailResponse {
-  errMsg?: string;
-}
-
-export function request<T>(options: RequestOptions): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    uni.request({
-      url: `${API_BASE_URL}${options.url}`,
-      method: options.method ?? 'GET',
-      data: options.data,
-      header: {
-        'Content-Type': 'application/json',
-        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-        ...options.header,
-      },
-      success: (raw: unknown) => {
-        const res = raw as UniSuccessResponse;
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          resolve(res.data as T);
-        } else {
-          reject(new Error(extractMessage(res.data, res.statusCode)));
-        }
-      },
-      fail: (err: unknown) => {
-        reject(new Error((err as UniFailResponse)?.errMsg ?? '网络请求失败'));
-      },
-    });
-  });
+function parseJsonSafe(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
 }
 
 function extractMessage(data: unknown, statusCode: number): string {

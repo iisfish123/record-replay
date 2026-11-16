@@ -4,8 +4,8 @@ import { login as apiLogin } from '../api/auth';
 import { setAuthToken } from '../api/request';
 
 export const useAuthStore = defineStore('auth', () => {
-  const token = ref<string>((uni.getStorageSync('token') as string) || '');
-  const userId = ref<string>((uni.getStorageSync('userId') as string) || '');
+  const token = ref<string>(localStorage.getItem('token') || '');
+  const userId = ref<string>(localStorage.getItem('userId') || '');
 
   if (token.value) setAuthToken(token.value);
 
@@ -13,8 +13,8 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = nextToken;
     userId.value = nextUserId;
     setAuthToken(nextToken);
-    uni.setStorageSync('token', nextToken);
-    uni.setStorageSync('userId', nextUserId);
+    localStorage.setItem('token', nextToken);
+    localStorage.setItem('userId', nextUserId);
   }
 
   async function login(phone: string, code: string): Promise<void> {
@@ -26,8 +26,8 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = '';
     userId.value = '';
     setAuthToken(null);
-    uni.removeStorageSync('token');
-    uni.removeStorageSync('userId');
+    localStorage.removeItem('token');
+    localStorage.removeItem('userId');
   }
 
   return { token, userId, setSession, login, logout };

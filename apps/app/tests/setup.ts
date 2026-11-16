@@ -1,22 +1,13 @@
 import { vi } from 'vitest';
 
-const storage = new Map<string, unknown>();
+// jsdom 已提供 localStorage、FormData、URL.createObjectURL
 
-vi.stubGlobal('uni', {
-  request: vi.fn(),
-  uploadFile: vi.fn(),
-  getStorageSync: (k: string) => storage.get(k) ?? '',
-  setStorageSync: (k: string, v: unknown) => {
-    storage.set(k, v);
-  },
-  removeStorageSync: (k: string) => {
-    storage.delete(k);
-  },
-  showToast: vi.fn(),
-  chooseImage: vi.fn(),
-  getRecorderManager: vi.fn(),
-  navigateTo: vi.fn(),
-  reLaunch: vi.fn(),
-});
+// mock fetch，由各 spec 自行设置实现
+vi.stubGlobal(
+  'fetch',
+  vi.fn().mockResolvedValue(
+    new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }),
+  ),
+);
 
 export {};

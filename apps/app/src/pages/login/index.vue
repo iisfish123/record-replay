@@ -1,55 +1,54 @@
 <template>
-  <view class="page">
-    <view class="brand">
-      <view class="title">怀念亲人</view>
-      <view class="subtitle">让思念，有回声</view>
-    </view>
+  <div class="page">
+    <div class="brand">
+      <div class="title">怀念亲人</div>
+      <div class="subtitle">让思念，有回声</div>
+    </div>
 
     <input
       class="input"
       v-model="phone"
-      type="number"
+      type="tel"
       maxlength="11"
       placeholder="请输入手机号"
-      placeholder-class="ph"
     />
 
-    <view class="row">
+    <div class="row">
       <input
         class="input code"
         v-model="code"
-        type="number"
+        type="tel"
         maxlength="8"
         placeholder="验证码"
-        placeholder-class="ph"
       />
       <button class="btn-send" :disabled="counting > 0" @click="onSend">
         {{ counting > 0 ? `${counting}s` : '获取验证码' }}
       </button>
-    </view>
+    </div>
 
-    <button class="btn-primary" :loading="loading" :disabled="loading" @click="onLogin">登录</button>
+    <button class="btn-primary" :disabled="loading" @click="onLogin">
+      {{ loading ? '登录中…' : '登录' }}
+    </button>
 
-    <view class="agreement">登录即代表同意《用户协议》与《隐私政策》</view>
-  </view>
+    <div class="agreement">登录即代表同意《用户协议》与《隐私政策》</div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { PhoneSchema, CodeSchema } from '@record-replay/shared';
 import { sendCode } from '@/api/auth';
 import { useAuthStore } from '@/stores/auth';
+import { toast } from '@/utils/toast';
 
+const router = useRouter();
 const auth = useAuthStore();
 
 const phone = ref('');
 const code = ref('');
 const counting = ref(0);
 const loading = ref(false);
-
-function toast(title: string) {
-  uni.showToast({ title, icon: 'none' });
-}
 
 async function onSend() {
   if (!PhoneSchema.safeParse(phone.value).success) return toast('请输入正确的手机号');
@@ -72,7 +71,7 @@ async function onLogin() {
   loading.value = true;
   try {
     await auth.login(phone.value, code.value);
-    uni.reLaunch({ url: '/pages/home/index' });
+    router.replace('/home');
   } catch (e) {
     toast((e as Error).message);
   } finally {
@@ -83,68 +82,70 @@ async function onLogin() {
 
 <style scoped>
 .page {
-  padding: 120rpx 48rpx 0;
+  padding: 60px 24px 0;
 }
 .brand {
-  margin-bottom: 80rpx;
+  margin-bottom: 40px;
 }
 .title {
-  font-size: 52rpx;
+  font-size: 26px;
   font-weight: 700;
   color: #1a1a1a;
 }
 .subtitle {
-  margin-top: 16rpx;
-  font-size: 28rpx;
+  margin-top: 8px;
+  font-size: 14px;
   color: #8a8a94;
 }
 .input {
-  height: 96rpx;
-  padding: 0 28rpx;
+  width: 100%;
+  height: 48px;
+  padding: 0 14px;
   background: #ffffff;
-  border-radius: 20rpx;
-  font-size: 30rpx;
-  margin-bottom: 24rpx;
+  border-radius: 10px;
+  font-size: 15px;
+  margin-bottom: 12px;
 }
-.ph {
+.input::placeholder {
   color: #b6b6bf;
 }
 .row {
   display: flex;
   align-items: flex-start;
-  gap: 20rpx;
+  gap: 10px;
 }
 .code {
   flex: 1;
   margin-bottom: 0;
 }
 .btn-send {
-  width: 240rpx;
-  height: 96rpx;
-  line-height: 96rpx;
-  font-size: 28rpx;
+  width: 120px;
+  height: 48px;
+  font-size: 14px;
   color: #2b6cff;
   background: #eaf1ff;
-  border-radius: 20rpx;
-  margin: 0;
+  border-radius: 10px;
 }
 .btn-send[disabled] {
   color: #9d9da8;
   background: #efeff3;
 }
 .btn-primary {
-  margin-top: 48rpx;
-  height: 96rpx;
-  line-height: 96rpx;
-  font-size: 32rpx;
+  margin-top: 24px;
+  width: 100%;
+  height: 48px;
+  font-size: 16px;
   color: #ffffff;
   background: #2b6cff;
-  border-radius: 20rpx;
+  border-radius: 10px;
+}
+.btn-primary[disabled] {
+  opacity: 0.6;
 }
 .agreement {
-  margin-top: 40rpx;
+  margin-top: 20px;
   text-align: center;
-  font-size: 24rpx;
+  font-size: 12px;
   color: #a8a8b2;
 }
 </style>

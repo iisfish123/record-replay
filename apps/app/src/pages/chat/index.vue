@@ -1,6 +1,6 @@
 <template>
-  <view class="page">
-    <view class="stage">
+  <div class="page">
+    <div class="stage">
       <video
         v-if="videoUrl"
         class="video"
@@ -8,43 +8,44 @@
         :poster="poster"
         controls
         autoplay
-        object-fit="cover"
+        playsinline
+        webkit-playsinline
       />
-      <view v-else class="placeholder">
-        <image v-if="poster" class="poster" :src="poster" mode="aspectFill" />
-        <view class="phase">{{ phaseText }}</view>
-      </view>
-    </view>
+      <div v-else class="placeholder">
+        <img v-if="poster" class="poster" :src="poster" />
+        <div class="phase">{{ phaseText }}</div>
+      </div>
+    </div>
 
-    <view v-if="answerText" class="bubble">
-      <text class="quote">“{{ answerText }}”</text>
-    </view>
+    <div v-if="answerText" class="bubble">
+      <span class="quote">"{{ answerText }}"</span>
+    </div>
 
-    <view class="input-row">
+    <div class="input-row">
       <input
         class="input"
         v-model="question"
         placeholder="对他说点什么…"
-        placeholder-class="ph"
         :disabled="asking"
-        confirm-type="send"
-        @confirm="onAsk"
+        @keydown.enter="onAsk"
       />
-      <button class="btn-send" :loading="asking" :disabled="asking" @click="onAsk">发送</button>
-    </view>
-  </view>
+      <button class="btn-send" :disabled="asking" @click="onAsk">发送</button>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
-import { onLoad } from '@dcloudio/uni-app';
+import { onMounted, ref } from 'vue';
+import { useRoute } from 'vue-router';
 import { AskSchema } from '@record-replay/shared';
 import { ask, getTask } from '@/api/task';
 import { getPersona } from '@/api/persona';
 import { absoluteUrl } from '@/config';
 import { poll } from '@/utils/poll';
 import { useSessionStore } from '@/stores/session';
+import { toast } from '@/utils/toast';
 
+const route = useRoute();
 const session = useSessionStore();
 
 const personaId = ref('');
@@ -55,10 +56,10 @@ const videoUrl = ref('');
 const asking = ref(false);
 const phaseText = ref('输入一句话，让他/她来回答你');
 
-onLoad(async (query) => {
-  personaId.value = (query?.personaId as string) || session.personaId;
+onMounted(async () => {
+  personaId.value = (route.query.personaId as string) || session.personaId;
   if (!personaId.value) {
-    uni.showToast({ title: '未找到人格档案', icon: 'none' });
+    toast('未找到人格档案');
     return;
   }
   try {
@@ -72,7 +73,7 @@ onLoad(async (query) => {
 async function onAsk() {
   const q = question.value.trim();
   if (!AskSchema.safeParse({ question: q }).success) {
-    uni.showToast({ title: '请输入 1–200 字的问题', icon: 'none' });
+    toast('请输入 1–200 字的问题');
     return;
   }
   asking.value = true;
@@ -97,7 +98,7 @@ async function onAsk() {
     question.value = '';
   } catch (e) {
     phaseText.value = (e as Error).message;
-    uni.showToast({ title: (e as Error).message, icon: 'none' });
+    toast((e as Error).message);
   } finally {
     asking.value = false;
   }
@@ -109,7 +110,7 @@ async function onAsk() {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  padding: 32rpx;
+  padding: 16px;
   box-sizing: border-box;
 }
 .stage {
@@ -118,13 +119,14 @@ async function onAsk() {
   align-items: center;
   justify-content: center;
   background: #101014;
-  border-radius: 24rpx;
+  border-radius: 12px;
   overflow: hidden;
-  min-height: 760rpx;
+  min-height: 380px;
 }
 .video {
   width: 100%;
-  height: 900rpx;
+  height: 450px;
+  object-fit: contain;
 }
 .placeholder {
   display: flex;
@@ -132,53 +134,55 @@ async function onAsk() {
   align-items: center;
 }
 .poster {
-  width: 320rpx;
-  height: 320rpx;
+  width: 160px;
+  height: 160px;
   border-radius: 50%;
   opacity: 0.55;
+  object-fit: cover;
 }
 .phase {
-  margin-top: 32rpx;
+  margin-top: 16px;
   color: #cfcfd8;
-  font-size: 28rpx;
+  font-size: 14px;
 }
 .bubble {
-  margin-top: 28rpx;
+  margin-top: 14px;
   background: #ffffff;
-  border-radius: 20rpx;
-  padding: 28rpx 32rpx;
+  border-radius: 10px;
+  padding: 14px 16px;
 }
 .quote {
-  font-size: 30rpx;
+  font-size: 15px;
   color: #2a2a33;
   line-height: 1.6;
 }
 .input-row {
   display: flex;
   align-items: center;
-  gap: 20rpx;
-  margin-top: 24rpx;
+  gap: 10px;
+  margin-top: 12px;
   padding-bottom: env(safe-area-inset-bottom);
 }
 .input {
   flex: 1;
-  height: 92rpx;
-  padding: 0 28rpx;
+  height: 46px;
+  padding: 0 14px;
   background: #ffffff;
-  border-radius: 20rpx;
-  font-size: 30rpx;
+  border-radius: 10px;
+  font-size: 15px;
 }
-.ph {
+.input::placeholder {
   color: #b6b6bf;
 }
 .btn-send {
-  width: 180rpx;
-  height: 92rpx;
-  line-height: 92rpx;
-  font-size: 30rpx;
+  width: 90px;
+  height: 46px;
+  font-size: 15px;
   color: #ffffff;
   background: #2b6cff;
-  border-radius: 20rpx;
-  margin: 0;
+  border-radius: 10px;
+}
+.btn-send[disabled] {
+  opacity: 0.6;
 }
 </style>

@@ -1,10 +1,10 @@
 import { defineConfig } from 'vite';
-import uni from '@dcloudio/vite-plugin-uni';
+import vue from '@vitejs/plugin-vue';
 import { fileURLToPath, URL } from 'node:url';
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [uni()],
+  plugins: [vue()],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -12,5 +12,9 @@ export default defineConfig({
         new URL('../../packages/shared/src/index.ts', import.meta.url),
       ),
     },
+  },
+  server: {
+    host: true,
+    port: 5173,
   },
 });
