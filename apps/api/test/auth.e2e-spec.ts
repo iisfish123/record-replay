@@ -8,7 +8,9 @@ describe('auth e2e', () => {
   let app: INestApplication;
   const smsClient = {
     sendSmsVerifyCodeWithOptions: jest.fn().mockResolvedValue({ body: { code: 'OK' } }),
-    checkSmsVerifyCodeWithOptions: jest.fn().mockResolvedValue({ body: { code: 'OK' } }),
+    checkSmsVerifyCodeWithOptions: jest
+      .fn()
+      .mockResolvedValue({ body: { code: 'OK', model: { verifyResult: 'PASS' } } }),
   };
 
   beforeAll(async () => {

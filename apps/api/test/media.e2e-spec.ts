@@ -15,7 +15,9 @@ describe('media e2e', () => {
       .overrideProvider(SMS_CLIENT)
       .useValue({
         sendSmsVerifyCodeWithOptions: jest.fn().mockResolvedValue({ body: { code: 'OK' } }),
-        checkSmsVerifyCodeWithOptions: jest.fn().mockResolvedValue({ body: { code: 'OK' } }),
+        checkSmsVerifyCodeWithOptions: jest
+          .fn()
+          .mockResolvedValue({ body: { code: 'OK', model: { verifyResult: 'PASS' } } }),
       })
       .compile();
     app = moduleRef.createNestApplication();
