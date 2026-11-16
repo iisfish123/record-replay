@@ -19,7 +19,7 @@ describe('task e2e', () => {
   const voice = {
     train: jest.fn().mockResolvedValue({ speakerId: 'p-1' }),
     queryTrainStatus: jest.fn().mockResolvedValue('ready'),
-    synthesize: jest.fn().mockResolvedValue(Buffer.from('audio')),
+    synthesize: jest.fn().mockResolvedValue({ audio: Buffer.from('audio'), durationMs: 4200 }),
   };
   const render = {
     submit: jest.fn().mockResolvedValue('task-1'),
@@ -90,6 +90,7 @@ describe('task e2e', () => {
     expect(body.status).toBe('done');
     expect(body.videoUrl).toMatch(/\/static\/videos\//);
     expect(body.answerText).toBe('孩子，我很好，别挂念。');
-    expect(render.submit).toHaveBeenCalled();
+    // 第 3 个参数为语音实际时长（秒），MiniMax 依赖它对齐口型视频长度
+    expect(render.submit).toHaveBeenCalledWith(expect.any(String), expect.any(String), 5);
   });
 });

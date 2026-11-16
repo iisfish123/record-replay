@@ -16,7 +16,7 @@ describe('persona e2e', () => {
   const voice = {
     train: jest.fn().mockResolvedValue({ speakerId: 'p-1' }),
     queryTrainStatus: jest.fn().mockResolvedValue('ready'),
-    synthesize: jest.fn().mockResolvedValue(Buffer.from('audio')),
+    synthesize: jest.fn().mockResolvedValue({ audio: Buffer.from('audio'), durationMs: 4200 }),
   };
 
   beforeAll(async () => {

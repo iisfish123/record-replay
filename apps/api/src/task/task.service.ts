@@ -59,13 +59,17 @@ export class TaskService {
       // 2) 用克隆音色合成语音
       await this.tasks.update(taskId, { status: 'tts' });
       if (!persona.speakerId) throw new Error('人格音色尚未就绪');
-      const audio = await this.voice.synthesize(answerText, persona.speakerId);
+      const { audio, durationMs } = await this.voice.synthesize(answerText, persona.speakerId);
       const audioUrl = await this.saveFile('audio', `${randomUUID()}.mp3`, audio);
       await this.tasks.update(taskId, { audioUrl });
 
-      // 3) 提交口型视频任务
+      // 3) 提交口型视频任务（火山 OmniHuman 自动跟随音频；MiniMax 需显式指定时长）
       await this.tasks.update(taskId, { status: 'rendering' });
-      const remoteTaskId = await this.render.submit(persona.avatarUrl, audioUrl);
+      const remoteTaskId = await this.render.submit(
+        persona.avatarUrl,
+        audioUrl,
+        Math.ceil(durationMs / 1000) || undefined,
+      );
 
       // 4) 轮询并转存（远端 video_url 仅 1 小时有效）
       const videoUrl = await this.pollAndPersist(taskId, remoteTaskId);

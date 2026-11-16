@@ -1,4 +1,11 @@
-import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { extname } from 'node:path';
@@ -21,6 +28,24 @@ export class PersonaService {
   ) {}
 
   async create(userId: string, avatarUrl: string, voiceSampleUrl: string): Promise<Persona> {
+    if (this.voice.mode === 'clone') {
+      // 复刻音色按「音色个数」一次性计费（火山 138 元/个，MiniMax 9.9 元/个）。同一用户复用已有音色，避免重复扣费。
+      const reusable = await this.repo.findOne({ where: { userId, status: 'ready' } });
+      if (reusable?.speakerId) {
+        return this.repo.save(
+          this.repo.create({
+            userId,
+            avatarUrl,
+            voiceSampleUrl,
+            status: 'ready',
+            speakerId: reusable.speakerId,
+          }),
+        );
+      }
+      const inflight = await this.repo.findOne({ where: { userId, status: 'training' } });
+      if (inflight) throw new ConflictException('音色正在训练中，请稍候再创建');
+    }
+
     const persona = await this.repo.save(
       this.repo.create({ userId, avatarUrl, voiceSampleUrl, status: 'pending' }),
     );
@@ -45,11 +70,17 @@ export class PersonaService {
   private async trainVoice(persona: Persona): Promise<void> {
     await this.updateStatus(persona.id, 'training');
     try {
-      const res = await fetch(persona.voiceSampleUrl);
-      if (!res.ok) throw new Error(`下载音色样本失败: ${res.status}`);
-      const audio = Buffer.from(await res.arrayBuffer());
-      const format = extname(persona.voiceSampleUrl.split('?')[0]).slice(1) || 'mp3';
-      const { speakerId } = await this.voice.train(buildSpeakerId(), audio, format);
+      let speakerId: string;
+      if (this.voice.mode === 'preset') {
+        // 预置音色无需样本与训练，直接落到 ready。
+        ({ speakerId } = await this.voice.train(''));
+      } else {
+        const res = await fetch(persona.voiceSampleUrl);
+        if (!res.ok) throw new Error(`下载音色样本失败: ${res.status}`);
+        const audio = Buffer.from(await res.arrayBuffer());
+        const format = extname(persona.voiceSampleUrl.split('?')[0]).slice(1) || 'mp3';
+        ({ speakerId } = await this.voice.train(buildSpeakerId(), audio, format));
+      }
       await this.updateStatus(persona.id, 'ready', { speakerId });
     } catch (err: any) {
       await this.updateStatus(persona.id, 'failed', { error: String(err?.message ?? err) });

@@ -22,7 +22,11 @@ export interface RenderQueryResult {
 }
 
 export interface RenderProvider {
-  submit(imageUrl: string, audioUrl: string): Promise<string>;
+  /**
+   * @param durationSeconds 期望的视频时长（秒）。火山 OmniHuman 自动跟随音频长度，可忽略；
+   *   MiniMax 必须显式指定，否则长回答会被截断。
+   */
+  submit(imageUrl: string, audioUrl: string, durationSeconds?: number): Promise<string>;
   query(taskId: string): Promise<RenderQueryResult>;
 }
 

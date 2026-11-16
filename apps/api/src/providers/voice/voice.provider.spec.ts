@@ -1,7 +1,12 @@
-import { VolcanoVoiceProvider } from './voice.provider';
+import { PresetVoiceProvider, VolcanoVoiceProvider } from './voice.provider';
 
 describe('VolcanoVoiceProvider', () => {
   const cfg = { appid: '1119668586', accessToken: 'tok' };
+
+  it('mode 为 clone', () => {
+    const provider = new VolcanoVoiceProvider(cfg as any, jest.fn() as any);
+    expect(provider.mode).toBe('clone');
+  });
 
   it('train: 用旧版控制台鉴权提交训练，返回 speakerId', async () => {
     const fetchMock = jest.fn().mockResolvedValue({
@@ -90,7 +95,9 @@ describe('VolcanoVoiceProvider', () => {
 
     const out = await provider.synthesize('孩子，妈妈一直都在。', 'custom_zh_p1');
 
-    expect(out.toString()).toBe('mp3-part-1-part-2');
+    expect(out.audio.toString()).toBe('mp3-part-1-part-2');
+    // 火山拿不到确切时长，交给渲染方按默认时长处理
+    expect(out.durationMs).toBe(0);
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('https://openspeech.bytedance.com/api/v3/tts/unidirectional');
     expect(init.headers['X-Api-Resource-Id']).toBe('seed-icl-2.0');
@@ -109,5 +116,53 @@ describe('VolcanoVoiceProvider', () => {
     const provider = new VolcanoVoiceProvider(cfg as any, fetchMock as any);
 
     await expect(provider.synthesize('hi', 'bad-speaker')).rejects.toThrow(/55000000/);
+  });
+});
+
+describe('PresetVoiceProvider', () => {
+  const cfg = { appid: '1119668586', accessToken: 'tok' };
+  const PRESET = 'zh_female_cancan_uranus_bigtts';
+
+  it('mode 为 preset', () => {
+    const provider = new PresetVoiceProvider(cfg as any, PRESET, jest.fn() as any);
+    expect(provider.mode).toBe('preset');
+  });
+
+  it('train: 不发起任何网络请求（不产生 138 元音色费），直接返回预置音色 id', async () => {
+    const fetchMock = jest.fn();
+    const provider = new PresetVoiceProvider(cfg as any, PRESET, fetchMock as any);
+
+    const out = await provider.train('custom_zh_ignored');
+
+    expect(out.speakerId).toBe(PRESET);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('queryTrainStatus: 固定返回 ready', async () => {
+    const provider = new PresetVoiceProvider(cfg as any, PRESET, jest.fn() as any);
+    await expect(provider.queryTrainStatus(PRESET)).resolves.toBe('ready');
+  });
+
+  it('synthesize: 走 seed-tts-2.0 公共音色资源 + 预置 speaker', async () => {
+    const chunk = Buffer.from('mp3-bytes').toString('base64');
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      text: async () =>
+        [
+          JSON.stringify({ code: 0, data: chunk }),
+          JSON.stringify({ code: 20000000, message: 'OK', data: null }),
+        ].join('\n'),
+    });
+    const provider = new PresetVoiceProvider(cfg as any, PRESET, fetchMock as any);
+
+    const out = await provider.synthesize('你好呀', PRESET);
+
+    expect(out.audio.toString()).toBe('mp3-bytes');
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://openspeech.bytedance.com/api/v3/tts/unidirectional');
+    expect(init.headers['X-Api-Resource-Id']).toBe('seed-tts-2.0');
+    const body = JSON.parse(init.body);
+    expect(body.req_params.speaker).toBe(PRESET);
+    expect(body.req_params.text).toBe('你好呀');
   });
 });

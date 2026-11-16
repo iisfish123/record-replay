@@ -9,8 +9,26 @@ export interface AppConfig {
   redis: { host: string; port: number };
   aliyun: { accessKeyId: string; accessKeySecret: string; signName: string; templateCode: string };
   deepseek: { apiKey: string; baseUrl: string; model: string };
-  volcVoice: { appid: string; accessToken: string; cluster: string };
+  volcVoice: {
+    appid: string;
+    accessToken: string;
+    cluster: string;
+    mode: 'preset' | 'clone';
+    presetSpeaker: string;
+  };
   volcOmni: { accessKeyId: string; accessKeySecret: string; reqKey: string };
+  minimax: {
+    apiKey: string;
+    baseUrl: string;
+    ttsModel: string;
+    videoModel: string;
+    videoResolution: string;
+    videoDuration: number;
+    videoRatio: string;
+    videoPrompt: string;
+  };
+  voiceProvider: 'volcano' | 'minimax';
+  renderProvider: 'omnihuman' | 'minimax';
   answerMaxChars: number;
 }
 
@@ -45,11 +63,26 @@ export default (): AppConfig => ({
     appid: process.env.VOLC_TTS_APPID ?? '',
     accessToken: process.env.VOLC_TTS_ACCESS_TOKEN ?? '',
     cluster: process.env.VOLC_TTS_CLUSTER ?? 'volcano_icl',
+    mode: (process.env.VOICE_MODE as 'preset' | 'clone') ?? 'preset',
+    presetSpeaker: process.env.VOLC_PRESET_SPEAKER ?? 'zh_female_cancan_uranus_bigtts',
   },
   volcOmni: {
     accessKeyId: process.env.VOLC_ACCESS_KEY_ID ?? '',
     accessKeySecret: process.env.VOLC_ACCESS_KEY_SECRET ?? '',
     reqKey: process.env.VOLC_OMNI_REQ_KEY ?? 'realman_avatar_picture_omni20_cvtob',
   },
-  answerMaxChars: parseInt(process.env.ANSWER_MAX_CHARS ?? '70', 10),
+  minimax: {
+    apiKey: process.env.MINIMAX_API_KEY ?? '',
+    baseUrl: process.env.MINIMAX_BASE_URL ?? 'https://api.minimax.cn',
+    ttsModel: process.env.MINIMAX_TTS_MODEL ?? 'speech-2.8-turbo',
+    videoModel: process.env.MINIMAX_VIDEO_MODEL ?? 'MiniMax-H3-Lite',
+    videoResolution: process.env.MINIMAX_VIDEO_RESOLUTION ?? '768P',
+    videoDuration: parseInt(process.env.MINIMAX_VIDEO_DURATION ?? '6', 10),
+    videoRatio: process.env.MINIMAX_VIDEO_RATIO ?? '9:16',
+    videoPrompt: process.env.MINIMAX_VIDEO_PROMPT ?? 'The person is speaking naturally to the camera.',
+  },
+  voiceProvider: (process.env.VOICE_PROVIDER as 'volcano' | 'minimax') ?? 'minimax',
+  renderProvider: (process.env.RENDER_PROVIDER as 'omnihuman' | 'minimax') ?? 'minimax',
+  // MiniMax 参考音频单段上限 15 秒（约 4.5 字/秒），70 字会超出上限被上游拒绝。
+  answerMaxChars: parseInt(process.env.ANSWER_MAX_CHARS ?? '60', 10),
 });
