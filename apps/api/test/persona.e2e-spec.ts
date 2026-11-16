@@ -4,19 +4,32 @@ import request from 'supertest';
 import { randomUUID } from 'node:crypto';
 import { AppModule } from '../src/app.module';
 import { SMS_CLIENT } from '../src/auth/sms.service';
+import { VOICE_PROVIDER } from '../src/providers/voice/voice.provider';
+
+const VOICE_SAMPLE = `data:audio/mp3;base64,${Buffer.from('audio').toString('base64')}`;
 
 describe('persona e2e', () => {
   let app: INestApplication;
   let token: string;
   let token2: string;
 
+  const voice = {
+    train: jest.fn().mockResolvedValue({ speakerId: 'p-1' }),
+    queryTrainStatus: jest.fn().mockResolvedValue('ready'),
+    synthesize: jest.fn().mockResolvedValue(Buffer.from('audio')),
+  };
+
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(SMS_CLIENT)
       .useValue({
         sendSmsVerifyCodeWithOptions: jest.fn().mockResolvedValue({ body: { code: 'OK' } }),
-        checkSmsVerifyCodeWithOptions: jest.fn().mockResolvedValue({ body: { code: 'OK' } }),
+        checkSmsVerifyCodeWithOptions: jest
+          .fn()
+          .mockResolvedValue({ body: { code: 'OK', model: { verifyResult: 'PASS' } } }),
       })
+      .overrideProvider(VOICE_PROVIDER)
+      .useValue(voice)
       .compile();
     app = moduleRef.createNestApplication();
     await app.init();
@@ -38,17 +51,39 @@ describe('persona e2e', () => {
     const res = await request(app.getHttpServer())
       .post('/personas')
       .set('Authorization', `Bearer ${token}`)
-      .send({ avatarUrl: 'http://x/a.jpg', voiceSampleUrl: 'http://x/v.mp3' })
+      .send({ avatarUrl: 'http://x/a.jpg', voiceSampleUrl: VOICE_SAMPLE })
       .expect(201);
     expect(res.body.status).toBe('pending');
     expect(res.body.id).toBeTruthy();
+  });
+
+  it('创建后异步完成音色训练 -> status=ready 且带 speakerId', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/personas')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ avatarUrl: 'http://x/a.jpg', voiceSampleUrl: VOICE_SAMPLE })
+      .expect(201);
+
+    let body: any;
+    for (let i = 0; i < 30; i++) {
+      const res = await request(app.getHttpServer())
+        .get(`/personas/${created.body.id}`)
+        .set('Authorization', `Bearer ${token}`);
+      body = res.body;
+      if (body.status === 'ready' || body.status === 'failed') break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+
+    expect(body.status).toBe('ready');
+    expect(body.speakerId).toBe('p-1');
+    expect(voice.train).toHaveBeenCalled();
   });
 
   it('查询人格 -> 200', async () => {
     const created = await request(app.getHttpServer())
       .post('/personas')
       .set('Authorization', `Bearer ${token}`)
-      .send({ avatarUrl: 'http://x/a.jpg', voiceSampleUrl: 'http://x/v.mp3' });
+      .send({ avatarUrl: 'http://x/a.jpg', voiceSampleUrl: VOICE_SAMPLE });
     const res = await request(app.getHttpServer())
       .get(`/personas/${created.body.id}`)
       .set('Authorization', `Bearer ${token}`)
@@ -75,7 +110,7 @@ describe('persona e2e', () => {
     const created = await request(app.getHttpServer())
       .post('/personas')
       .set('Authorization', `Bearer ${token}`)
-      .send({ avatarUrl: 'http://x/a.jpg', voiceSampleUrl: 'http://x/v.mp3' })
+      .send({ avatarUrl: 'http://x/a.jpg', voiceSampleUrl: VOICE_SAMPLE })
       .expect(201);
     await request(app.getHttpServer())
       .get(`/personas/${created.body.id}`)

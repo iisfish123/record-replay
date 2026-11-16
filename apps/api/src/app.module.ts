@@ -6,6 +6,8 @@ import { HealthController } from './health/health.controller';
 import { AuthModule } from './auth/auth.module';
 import { MediaModule } from './media/media.module';
 import { PersonaModule } from './persona/persona.module';
+import { ProvidersModule } from './providers/providers.module';
+import { TaskModule } from './task/task.module';
 
 @Module({
   imports: [
@@ -26,7 +28,9 @@ import { PersonaModule } from './persona/persona.module';
     }),
     AuthModule,
     MediaModule,
+    ProvidersModule,
     PersonaModule,
+    TaskModule,
   ],
   controllers: [HealthController],
 })
