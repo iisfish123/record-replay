@@ -49,7 +49,7 @@ export default (): AppConfig => ({
   volcOmni: {
     accessKeyId: process.env.VOLC_ACCESS_KEY_ID ?? '',
     accessKeySecret: process.env.VOLC_ACCESS_KEY_SECRET ?? '',
-    reqKey: process.env.VOLC_OMNI_REQ_KEY ?? 'realman_avatar_picture_omni_v2',
+    reqKey: process.env.VOLC_OMNI_REQ_KEY ?? 'realman_avatar_picture_omni20_cvtob',
   },
   answerMaxChars: parseInt(process.env.ANSWER_MAX_CHARS ?? '70', 10),
 });
