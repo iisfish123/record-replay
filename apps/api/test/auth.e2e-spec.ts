@@ -29,7 +29,7 @@ describe('auth e2e', () => {
   it('POST /auth/sms/send -> 200', async () => {
     await request(app.getHttpServer())
       .post('/auth/sms/send')
-      .send({ phone: '15920328477' })
+      .send({ phone: '15920328001' })
       .expect(200);
     expect(smsClient.sendSmsVerifyCodeWithOptions).toHaveBeenCalled();
   });
@@ -41,7 +41,7 @@ describe('auth e2e', () => {
   it('POST /auth/sms/login -> 返回 token，且自动建用户', async () => {
     const res = await request(app.getHttpServer())
       .post('/auth/sms/login')
-      .send({ phone: '15920328477', code: '123456' })
+      .send({ phone: '15920328001', code: '123456' })
       .expect(200);
     expect(typeof res.body.token).toBe('string');
     expect(res.body.token.length).toBeGreaterThan(20);
@@ -51,7 +51,7 @@ describe('auth e2e', () => {
     smsClient.checkSmsVerifyCodeWithOptions.mockResolvedValueOnce({ body: { code: 'FAIL' } });
     await request(app.getHttpServer())
       .post('/auth/sms/login')
-      .send({ phone: '15920328477', code: '000000' })
+      .send({ phone: '15920328001', code: '000000' })
       .expect(401);
   });
 });

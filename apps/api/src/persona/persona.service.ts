@@ -30,7 +30,11 @@ export class PersonaService {
   async create(userId: string, avatarUrl: string, voiceSampleUrl: string): Promise<Persona> {
     if (this.voice.mode === 'clone') {
       // 复刻音色按「音色个数」一次性计费（火山 138 元/个，MiniMax 9.9 元/个）。同一用户复用已有音色，避免重复扣费。
-      const reusable = await this.repo.findOne({ where: { userId, status: 'ready' } });
+      const reusable = await this.repo.findOne({
+        where: { userId, status: 'ready' },
+        // 同一用户可能有多条 ready 人格（每次复用都会新增一行），按时间倒序取最新的一条，避免命中历史脏数据。
+        order: { createdAt: 'DESC' },
+      });
       if (reusable?.speakerId) {
         return this.repo.save(
           this.repo.create({

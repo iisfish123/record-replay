@@ -35,11 +35,11 @@ describe('persona e2e', () => {
     await app.init();
     const res = await request(app.getHttpServer())
       .post('/auth/sms/login')
-      .send({ phone: '15920328477', code: '123456' });
+      .send({ phone: '15920328002', code: '123456' });
     token = res.body.token;
     const res2 = await request(app.getHttpServer())
       .post('/auth/sms/login')
-      .send({ phone: '15920328478', code: '123456' });
+      .send({ phone: '15920328003', code: '123456' });
     token2 = res2.body.token;
   });
 

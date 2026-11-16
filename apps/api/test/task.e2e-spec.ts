@@ -47,7 +47,7 @@ describe('task e2e', () => {
 
     const login = await request(app.getHttpServer())
       .post('/auth/sms/login')
-      .send({ phone: '15920328477', code: '123456' });
+      .send({ phone: '15920328004', code: '123456' });
     token = login.body.token;
 
     const persona = await request(app.getHttpServer())

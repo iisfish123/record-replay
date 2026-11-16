@@ -42,6 +42,25 @@ describe('PersonaService', () => {
       expect(voice.train).not.toHaveBeenCalled();
     });
 
+    it('复用查询按 createdAt 倒序，保证命中最新可用音色', async () => {
+      const repo = makeRepo();
+      repo.findOne.mockResolvedValue({
+        id: 'p-old',
+        userId: 'u1',
+        status: 'ready',
+        speakerId: 'custom_zh_old',
+      });
+      const voice = makeVoice('clone');
+      const service = new PersonaService(repo as any, voice);
+
+      await service.create('u1', '/a.jpg', '/v.mp3');
+
+      expect(repo.findOne).toHaveBeenCalledWith({
+        where: { userId: 'u1', status: 'ready' },
+        order: { createdAt: 'DESC' },
+      });
+    });
+
     it('已有音色正在训练中时拒绝新建，避免并发重复扣费', async () => {
       const repo = makeRepo();
       repo.findOne
