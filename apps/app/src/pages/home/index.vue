@@ -34,6 +34,20 @@
     </button>
 
     <div v-if="statusText" class="status">{{ statusText }}</div>
+
+    <div v-if="confirmVisible" class="modal-mask">
+      <div class="modal">
+        <div class="modal-title">确认生成数字人格？</div>
+        <div class="modal-body">
+          生成后将基于你的录音训练专属音色。复刻音色按「音色个数」一次性计费，单个约 9.9 元。
+          同一账号会复用已有音色，不会重复收费。
+        </div>
+        <div class="modal-actions">
+          <button class="btn-ghost" @click="confirmVisible = false">再想想</button>
+          <button class="btn-primary" @click="confirmCreate">确认生成</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -57,6 +71,7 @@ const avatarFile = ref<File | null>(null);
 const avatarPreview = ref('');
 const submitting = ref(false);
 const status = ref<PersonaStatus | ''>('');
+const confirmVisible = ref(false);
 
 const statusText = computed(() => {
   switch (status.value) {
@@ -89,15 +104,24 @@ function toggleRecord() {
   else start();
 }
 
-async function onCreate() {
+function onCreate() {
   if (!avatarFile.value) return toast('请先选择照片');
   if (!tempFile.value) return toast('请先录制语音');
+  confirmVisible.value = true;
+}
+
+function confirmCreate() {
+  confirmVisible.value = false;
+  void doCreate();
+}
+
+async function doCreate() {
   submitting.value = true;
   status.value = '';
   try {
     const [avatar, voice] = await Promise.all([
-      uploadFile(avatarFile.value, 'file', avatarFile.value.name),
-      uploadFile(tempFile.value, 'file', tempFile.value.name),
+      uploadFile(avatarFile.value!, 'file', avatarFile.value!.name),
+      uploadFile(tempFile.value!, 'file', tempFile.value!.name),
     ]);
     const persona = await createPersona(avatar.url, voice.url);
     session.setPersona(persona.id);
@@ -173,5 +197,42 @@ async function onCreate() {
   text-align: center;
   font-size: 13px;
   color: #6a6a74;
+}
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 100;
+}
+.modal {
+  width: 100%;
+  max-width: 340px;
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 22px 20px 16px;
+}
+.modal-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: #1a1a1a;
+  text-align: center;
+}
+.modal-body {
+  margin: 12px 0 20px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #6a6a74;
+}
+.modal-actions {
+  display: flex;
+  gap: 12px;
+}
+.modal-actions .btn-ghost,
+.modal-actions .btn-primary {
+  padding: 0 12px;
 }
 </style>
