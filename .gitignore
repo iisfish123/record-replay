@@ -4,6 +4,7 @@ dist/
 .env.*
 !.env.example
 apps/api/storage/
+assets/
 docker/mysql_data/
 *.log
 .DS_Store

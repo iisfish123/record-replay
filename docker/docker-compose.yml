@@ -3,6 +3,7 @@ name: record-replay
 services:
   mysql:
     image: mysql:8.4
+    pull_policy: never
     container_name: record-replay-mysql
     environment:
       MYSQL_ROOT_PASSWORD: recordreplay
@@ -20,6 +21,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    pull_policy: never
     container_name: record-replay-redis
     ports:
       - "127.0.0.1:6389:6379"
