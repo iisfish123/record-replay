@@ -71,6 +71,32 @@ jobs:
         working-directory: apps/app
         run: npx cap add android || npx cap sync android
 
+      - name: Inject microphone permission
+        working-directory: apps/app
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          python3 - "$MANIFEST" <<'PY'
+          import pathlib, sys
+
+          path = pathlib.Path(sys.argv[1])
+          xml = path.read_text()
+
+          # WebView 的 getUserMedia 走 Capacitor 的 AUDIO_CAPTURE 申请，未在 manifest 声明会被直接拒掉
+          if 'RECORD_AUDIO' not in xml:
+              xml = xml.replace(
+                  '</manifest>',
+                  '    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n'
+                  '    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n'
+                  '</manifest>',
+              )
+          # 接口是明文 http，Android 9+ 默认禁止，需显式放开
+          if 'usesCleartextTraffic' not in xml:
+              xml = xml.replace('<application', '<application android:usesCleartextTraffic="true"', 1)
+
+          path.write_text(xml)
+          PY
+          grep -E 'RECORD_AUDIO|MODIFY_AUDIO_SETTINGS|usesCleartextTraffic' "$MANIFEST"
+
       - name: Build Debug APK
         working-directory: apps/app/android
         run: ./gradlew assembleDebug --no-daemon

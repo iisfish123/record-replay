@@ -1,6 +1,12 @@
 import { ref, onUnmounted } from 'vue';
 
+/** 上游（MiniMax 音色复刻）要求样本时长不少于 10 秒，短于此长度会被拒收。 */
+export const MIN_SAMPLE_SECONDS = 10;
 export const MAX_RECORD_SECONDS = 20;
+
+export function isSampleLongEnough(seconds: number): boolean {
+  return seconds >= MIN_SAMPLE_SECONDS;
+}
 
 export function useRecorder(maxSeconds = MAX_RECORD_SECONDS) {
   const recording = ref(false);

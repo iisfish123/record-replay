@@ -58,7 +58,7 @@ import type { PersonaStatus } from '@record-replay/shared';
 import { uploadFile } from '@/api/media';
 import { createPersona, getPersona } from '@/api/persona';
 import { poll } from '@/utils/poll';
-import { useRecorder } from '@/utils/recorder';
+import { useRecorder, isSampleLongEnough, MIN_SAMPLE_SECONDS } from '@/utils/recorder';
 import { useSessionStore } from '@/stores/session';
 import { toast } from '@/utils/toast';
 
@@ -100,13 +100,21 @@ function onAvatarChange(e: Event) {
 }
 
 function toggleRecord() {
-  if (recording.value) stop();
-  else start();
+  if (recording.value) {
+    stop();
+    return;
+  }
+  start().catch((e: Error) => {
+    toast(e.message || '录音启动失败');
+  });
 }
 
 function onCreate() {
   if (!avatarFile.value) return toast('请先选择照片');
   if (!tempFile.value) return toast('请先录制语音');
+  if (!isSampleLongEnough(seconds.value)) {
+    return toast(`录音太短，请至少录 ${MIN_SAMPLE_SECONDS} 秒`);
+  }
   confirmVisible.value = true;
 }
 
