@@ -2,8 +2,14 @@ import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } fro
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { extname } from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { Persona } from './entities/persona.entity';
 import { VOICE_PROVIDER, VoiceProvider } from '../providers/voice/voice.provider';
+
+/** 火山复刻音色 custom_speaker_id 必须为字母数字下划线，形如 custom_zh_xxx。 */
+function buildSpeakerId(): string {
+  return `custom_zh_rr_${randomBytes(6).toString('hex')}`;
+}
 
 @Injectable()
 export class PersonaService {
@@ -43,7 +49,7 @@ export class PersonaService {
       if (!res.ok) throw new Error(`下载音色样本失败: ${res.status}`);
       const audio = Buffer.from(await res.arrayBuffer());
       const format = extname(persona.voiceSampleUrl.split('?')[0]).slice(1) || 'mp3';
-      const { speakerId } = await this.voice.train(persona.id, audio, format);
+      const { speakerId } = await this.voice.train(buildSpeakerId(), audio, format);
       await this.updateStatus(persona.id, 'ready', { speakerId });
     } catch (err: any) {
       await this.updateStatus(persona.id, 'failed', { error: String(err?.message ?? err) });
