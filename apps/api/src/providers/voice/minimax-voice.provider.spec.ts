@@ -47,6 +47,53 @@ describe('MiniMaxVoiceProvider', () => {
     expect(body.text).toBeUndefined();
   });
 
+  it('train: 样本为 webm（真机 WebView 录音格式）时先转 mp3 再上传', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ file: { file_id: 123 }, base_resp: { status_code: 0 } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ base_resp: { status_code: 0 } }),
+      });
+    const transcode = jest.fn().mockResolvedValue(Buffer.from('mp3-bytes'));
+    const provider = new MiniMaxVoiceProvider(cfg as any, fetchMock as any, transcode);
+
+    await provider.train(VOICE_ID, Buffer.from('webm-bytes'), 'webm');
+
+    expect(transcode).toHaveBeenCalledTimes(1);
+    expect(transcode.mock.calls[0][0].toString()).toBe('webm-bytes');
+    const uploaded = (fetchMock.mock.calls[0][1].body as FormData).get('file') as unknown as {
+      name: string;
+    };
+    expect(uploaded.name).toBe('sample.mp3');
+  });
+
+  it('train: 样本已是上游接受的格式（mp3/m4a/wav）时不转码', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ file: { file_id: 123 }, base_resp: { status_code: 0 } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ base_resp: { status_code: 0 } }),
+      });
+    const transcode = jest.fn();
+    const provider = new MiniMaxVoiceProvider(cfg as any, fetchMock as any, transcode);
+
+    await provider.train(VOICE_ID, Buffer.from('wav-bytes'), 'wav');
+
+    expect(transcode).not.toHaveBeenCalled();
+    const uploaded = (fetchMock.mock.calls[0][1].body as FormData).get('file') as unknown as {
+      name: string;
+    };
+    expect(uploaded.name).toBe('sample.wav');
+  });
+
   it('train: 缺少样本音频时抛错', async () => {
     const provider = new MiniMaxVoiceProvider(cfg as any, jest.fn() as any);
     await expect(provider.train(VOICE_ID)).rejects.toThrow(/样本音频/);

@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { SynthesizeResult, VoiceProvider } from './voice.provider';
+import { transcodeToMp3 } from './sample-transcoder';
 
 export interface MiniMaxVoiceConfig {
   apiKey: string;
@@ -8,6 +9,9 @@ export interface MiniMaxVoiceConfig {
 }
 
 const OK_STATUS = 0;
+
+/** MiniMax 音色复刻接受的样本格式，其余（如真机录出的 webm/ogg）需先转码。 */
+const ACCEPTED_SAMPLE_FORMATS = new Set(['mp3', 'm4a', 'wav']);
 
 /**
  * MiniMax 音色快速复刻 + 语音合成。
@@ -23,6 +27,7 @@ export class MiniMaxVoiceProvider implements VoiceProvider {
   constructor(
     private readonly config: MiniMaxVoiceConfig,
     private readonly fetchImpl: typeof fetch = fetch,
+    private readonly transcode: (audio: Buffer) => Promise<Buffer> = transcodeToMp3,
   ) {}
 
   private authHeaders(extra: Record<string, string> = {}): Record<string, string> {
@@ -51,7 +56,8 @@ export class MiniMaxVoiceProvider implements VoiceProvider {
 
   async train(speakerId: string, audio?: Buffer, format?: string): Promise<{ speakerId: string }> {
     if (!audio) throw new Error('音色训练需要提供样本音频');
-    const fileId = await this.uploadSample(audio, format ?? 'mp3');
+    const sample = await this.normalizeSample(audio, format ?? 'mp3');
+    const fileId = await this.uploadSample(sample.audio, sample.format);
 
     const res = await this.fetchImpl(`${this.config.baseUrl}/v1/voice_clone`, {
       method: 'POST',
@@ -65,6 +71,16 @@ export class MiniMaxVoiceProvider implements VoiceProvider {
       throw new Error(`音色复刻失败: ${code ?? res.status} ${json?.base_resp?.status_msg ?? ''}`.trim());
     }
     return { speakerId };
+  }
+
+  /** 上游只接受 mp3/m4a/wav，其余格式（真机录出的 webm/ogg）先转 mp3。 */
+  private async normalizeSample(
+    audio: Buffer,
+    format: string,
+  ): Promise<{ audio: Buffer; format: string }> {
+    const normalized = format.toLowerCase();
+    if (ACCEPTED_SAMPLE_FORMATS.has(normalized)) return { audio, format: normalized };
+    return { audio: await this.transcode(audio), format: 'mp3' };
   }
 
   async queryTrainStatus(_speakerId: string): Promise<'ready'> {
