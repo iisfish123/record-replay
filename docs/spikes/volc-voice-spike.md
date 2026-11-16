@@ -1,14 +1,15 @@
 # Spike: 火山引擎语音接口真实契约（Task 10）
 
-- 日期：2026-11-14 首版 / **2026-11-15 重大更新（TTS 已打通）**
+- 日期：2026-11-14 首版 / 2026-11-15 更新（TTS 打通） / **2026-11-16 更新（声音复刻训练 + 复刻音色合成打通）**
 - 目的：用真实凭证实调火山语音接口，确认音色训练 / 状态查询 / TTS 的 HTTP 契约，供 Task 11 适配器为准。
 - 凭证（脱敏）：
   - 旧版控制台：`VOLC_TTS_APPID=1119668586`，`VOLC_TTS_ACCESS_TOKEN=wW_Z…JL3F`
   - 新版控制台：`VOLC_API_KEY=b538…7e2e`
-- 结论摘要（2026-11-15）：
+- 结论摘要（2026-11-16 最新）：
   1. **TTS 已打通** ✅ —— `POST /api/v3/tts/unidirectional` + `X-Api-Resource-Id: seed-tts-2.0` + 2.0 音色（`_uranus_bigtts` 结尾）返回 **HTTP 200 + 真实 base64 音频**。
-  2. **声音复刻训练未授权** ❌ —— `POST /api/v3/tts/voice_clone` 返回 `[resource_id=volc.megatts.timbre] requested resource not granted`。根因：账号只开通了「豆包声音复刻模型2.0（合成）」，**未单独开通「后付费音色服务（音色训练）」**。
-  3. **OmniHuman 未开通** ❌ —— `cv` 服务仍 `Access Denied`（见 Task 12）。
+  2. **声音复刻训练已打通** ✅（2026-11-16 实调）—— `POST /api/v3/tts/voice_clone` 返回 `HTTP 200`，`status=2`（Success）、`model_type=5`（ICL V3 / 复刻2.0）。**关键：训练接口只认「旧版控制台」鉴权**（`X-Api-App-Key`/`X-Api-App-Id` + `X-Api-Access-Key`），新版 `X-Api-Key` 仍返回 `45000030`。详见「M」。
+  3. **复刻音色合成已打通** ✅（2026-11-16 实调）—— `seed-icl-2.0` + `speaker=<custom_speaker_id>` 返回 HTTP 200 + 真实音频。详见「M」。
+  4. **OmniHuman 已打通** ✅（2026-11-15 晚实调）—— `cv` 服务 v4 签名通过，OmniHuman2.0（`realman_avatar_picture_omni20_cvtob`）与 1.5（`jimeng_realman_avatar_picture_omni_v15`）均**已授权**；实调 2.0 成功产出 **5.02s 数字人视频**（见下方「L」）。首轮「`cv` Access Denied」结论**作废**（当时服务未开通或探针 action 不对）。
 - 根因澄清：此前的 `volc.tts.default` / `volc.service_type.10029` 「not granted」错误**不是**账号没开通语音服务，而是 **resource_id 写错了**。正确资源名见下。
 
 ---
@@ -18,7 +19,7 @@
 | 用途 | 方法/URL | Resource-Id | 鉴权 |
 |------|----------|-------------|------|
 | **TTS（v3 单向流式，推荐）** | `POST https://openspeech.bytedance.com/api/v3/tts/unidirectional` | `seed-tts-2.0`（公共2.0音色）/ `seed-icl-2.0`（复刻音色） | 旧版：`X-Api-App-Id` + `X-Api-Access-Key`；新版：`X-Api-Key` |
-| 音色训练上传（v3） | `POST https://openspeech.bytedance.com/api/v3/tts/voice_clone` | 服务端固定映射 `volc.megatts.timbre` | 同上 |
+| 音色训练上传（v3） | `POST https://openspeech.bytedance.com/api/v3/tts/voice_clone` | 服务端固定映射 `volc.megatts.timbre` | **仅旧版**：`X-Api-App-Key`/`X-Api-App-Id` + `X-Api-Access-Key`（新版 `X-Api-Key` 实测 403） |
 | 音色训练状态查询（v3） | `POST https://openspeech.bytedance.com/api/v3/tts/get_voice` | — | 同上 |
 | TTS（legacy v1，不推荐） | `POST https://openspeech.bytedance.com/api/v1/tts` | `volc.tts.default`（内部） | `Authorization: Bearer;<ACCESS_TOKEN>`（**分号**），body 内 `app.token` 需一致 |
 | 训练状态查询（legacy v1，不推荐） | `POST https://openspeech.bytedance.com/api/v1/mega_tts/status` | `Resource-Id: volc.megatts.voiceclone` | `Authorization: Bearer;<TOKEN>` |
@@ -114,19 +115,19 @@ curl -s -X POST 'https://openspeech.bytedance.com/api/v3/tts/unidirectional' \
 **响应字段契约**：`code`（0=分片，20000000=结束）、`message`、`data`（base64 或 null）、`sentence`（可选，句级信息）。
 **2.0 音色命名规则**：以 `_uranus_bigtts` 结尾（如 `zh_female_cancan_uranus_bigtts`）；`seed-tts-2.0` 仅支持该类音色。
 
-### K. 声音复刻训练实测 ❌（未授权）
+### K. 声音复刻训练实测 ✅（2026-11-16 打通）
+
+> 历史（已解决）：2026-11-15 及 2026-11-16 11:45 复测，均返回 `403 {"code":45000030,"message":"[resource_id=volc.megatts.timbre] requested resource not granted"}`；2026-11-16 15:22 起同一请求返回 200。→ 用户开通后存在**数小时级授权生效延迟**（不是配置问题）。
+
+**可用鉴权 = 旧版控制台**（新版 `X-Api-Key` 至今仍 403）：
 ```bash
 curl -s -X POST 'https://openspeech.bytedance.com/api/v3/tts/voice_clone' \
-  -H "X-Api-Key: <API_KEY>" -H "X-Api-Request-Id: <uuid>" \
-  -H 'X-Api-Resource-Id: seed-icl-2.0' -H 'Content-Type: application/json' \
-  -d '{"speaker_id":"custom_speaker_id","custom_speaker_id":"custom_zh_demo001",
+  -H "X-Api-App-Key: 1119668586" -H "X-Api-Access-Key: <ACCESS_TOKEN>" \
+  -H "X-Api-Request-Id: <uuid>" -H 'Content-Type: application/json' \
+  -d '{"speaker_id":"custom_speaker_id","custom_speaker_id":"custom_zh_rr_spike03",
        "audio":{"data":"<base64 wav>","format":"wav"},"language":0}'
 ```
-响应（HTTP 403，4 种 header 组合结果一致）：
-```json
-{"code":45000030,"message":"[resource_id=volc.megatts.timbre] requested resource not granted"}
-```
-→ 服务端把训练接口固定映射到 `volc.megatts.timbre`，**该资源未授权**。
+响应（HTTP 200）见「M」。服务端把训练接口固定映射到 `volc.megatts.timbre`。
 
 请求体契约（来自官方文档 声音复刻API-V3）：
 - 预付费音色：`{"speaker_id":"S_*******","audio":{"data":"<b64>","format":"wav"},"language":0}`
@@ -135,6 +136,92 @@ curl -s -X POST 'https://openspeech.bytedance.com/api/v3/tts/voice_clone' \
 - `language`：0=cn（默认）、1=en、2=ja、3=es、4=id、5=pt、6=de、7=fr、8=ko
 - 返回：`available_training_times`、`status`（0 NotFound/1 Training/2 Success/3 Failed/4 Active）、`speaker_status[].model_type`（2.0 为 4=ICL V2 / 5=ICL V3）、`demo_audio`
 - `status` 为 2 或 4 时即可调用 TTS
+
+---
+
+### L. OmniHuman 实调成功 ✅（2026-11-15 晚）
+
+**共享契约（`cv` 服务，两代通用）**
+- 端点：`POST https://visual.volcengineapi.com`，`Content-Type: application/json`
+- 固定签名域：`Region=cn-north-1`，`Service=cv`
+- 鉴权：**AK/SK 的 v4 签名**（`Authorization: HMAC-SHA256 Credential=…/…`, `X-Date`, `X-Content-Sha256`），与 TTS 的 `X-Api-Key` 完全不同体系
+- 通用错误码：`code=10000` 成功；`50411/50412/50413` 审核未过；`50429/50430` 限流；`50200` 入参非法；`50500/50501` 内部错误（可重试）
+- **关键业务约束（`50200` 实测）**：底层模型 `doubao-seedance-2-0-mini (r2v)` 要求 **音频时长 ≥ 4 秒**，否则报 `the parameter audio duration (seconds) specified in the request must be greater than or equal to 4`。
+
+**OmniHuman 2.0（本品采用）**
+- 提交：`?Action=CVSync2AsyncSubmitTask&Version=2022-08-31`
+  - Body：`req_key="realman_avatar_picture_omni20_cvtob"`
+  - 图片：`binary_data_base64: ["<b64>"]`（<4.7MB）**或** `image_urls: ["<公网URL>"]`（二选一，base64 优先）
+  - 音频：`audio_url: "<公网URL>"`（**必填，必须公网可访问**，MP3，时长 4s~300s）
+  - 可选：`prompt`、`enable_watermark`（默认 true，建议 false）
+- 查询：`?Action=CVSync2AsyncGetResult&Version=2022-08-31`，Body `{req_key, task_id}`
+  - `data.status`：`processing / in_queue / generating / done / not_found / expired`
+  - `data.video_url`（**1 小时有效**）；`data.resp_data` 内含 `video_meta.Duration`
+
+**本节实测记录**
+1. 首次提交（示例 404 图 URL）→ `50220 Download Url Error`（证明确实会主动拉取图片，且签名/授权已通过）。
+2. 第二次提交（base64 图 + 2.83s 音频）→ 提交 `10000` 拿到 `task_id`，轮询 32s 后 `50200`：**音频 <4s 被拒**。
+3. 第三次提交（base64 图 + **4.03s** 音频）→ `task_id=5178985085930850455`，~94s 后 `status=done`，产出 **5.024s / 832×1114 / H.264+AAC / 3.8MB** 视频。产物样例存于 `docs/spikes/omnihuman2-demo.mp4`。
+
+**OmniHuman 1.5（备选/低配）**
+- 提交：`?Action=CVSubmitTask&Version=2022-08-31`；查询：`?Action=CVGetResult&Version=2022-08-31`
+- Body：`req_key="jimeng_realman_avatar_picture_omni_v15"`，`image_url`（必填）、`audio_url`（必填，**<35s**）、`mask_url?`、`prompt?`、`pe_fast_mode?`
+- **注意**：1.5 **不支持 base64**，图片也必须是公网 URL；实测用占位 URL 提交即返回 `10000 + task_id`（提交阶段不校验图片可达性）
+
+**临时公网托管（仅用于联调，非生产方案）**
+- 本机无法访问 0x0.st / catbox / tmpfiles / transfer.sh（超时或被重置）；`pomf.lain.la` 可上传且返回 URL。
+- 上传：`curl -F "files[]=@file.mp3" https://pomf.lain.la/upload.php` → 返回 `pomf2.lain.la` 域名，**改用 `pomf.lain.la` 主域即可稳定访问**（`pomf2` 在本机不可达，但火山可拉取）。
+- ⚠️ 生产必须改用自有对象存储/`PUBLIC_BASE_URL`（见下「未决环境问题」）。
+
+---
+
+### M. 声音复刻训练 + 复刻音色合成实调成功 ✅（2026-11-16）
+
+**Step 1｜训练（`POST /api/v3/tts/voice_clone`）** —— 鉴权用**旧版控制台**（`X-Api-App-Key`/`X-Api-App-Id` + `X-Api-Access-Key`）：
+```json
+HTTP 200
+{
+  "status": 2,
+  "model_type": 5,
+  "model_version": 2,
+  "speaker_id": "custom_zh_rr_spike03",
+  "icl_speaker_id": "ICL_uranus_6afaaf44988ab0a3",
+  "available_training_times": 15,
+  "language": 0,
+  "create_time": 1794813768234,
+  "demo_audio": "https://lf9-lab-speech-tt-sign.bytespeech.com/...",
+  "extra_params": "{\"client_request_id\":\"\"}",
+  "version": "V1",
+  "speaker_status": [
+    { "model_type": 5, "model_version": 2, "icl_speaker_id": "ICL_uranus_6afaaf44988ab0a3", "demo_audio": "..." },
+    { "model_type": 1, "model_version": 1, "icl_speaker_id": "ICL_6afaaf449f9ae435", "demo_audio": "..." }
+  ]
+}
+```
+
+要点（与计划基线的 legacy v1 语义**不同**）：
+- **同步返回结果**：POST 直接返回 `status=2`（Success）并附带 `demo_audio`，**无需再轮询训练状态**。
+- `status`：`0` NotFound / `1` Training / `2` Success / `3` Failed / `4` Active；`2` 或 `4` 即可用于合成。
+- `model_type`：`4`=ICL V2、`5`=ICL V3（本次拿到 `5`，即复刻 2.0）。
+- `speaker_status[]` 会同时给出多代模型产物；音频均可用 `demo_audio` 试听。
+- 消费 `available_training_times`（每次调用 -= 1，本次回包仍显示 15，疑似返回的是配额上限而非剩余数，需以控制台为准）。
+- ⚠️ **每次 POST 都会新建一个训练任务**，不要把提交接口当作状态查询接口反复调用。
+
+**Step 2｜用复刻音色合成（`POST /api/v3/tts/unidirectional`）**：
+```bash
+curl -s -X POST 'https://openspeech.bytedance.com/api/v3/tts/unidirectional' \
+  -H "X-Api-App-Id: 1119668586" -H "X-Api-Access-Key: <ACCESS_TOKEN>" \
+  -H 'X-Api-Resource-Id: seed-icl-2.0' -H 'Content-Type: application/json' \
+  -d '{"user":{"uid":"spike"},
+       "req_params":{"text":"孩子，妈妈一直都在。",
+                     "speaker":"custom_zh_rr_spike03",
+                     "audio_params":{"format":"mp3","sample_rate":24000}}}'
+```
+→ `HTTP 200`，JSON-lines 累积 base64，产出 **18093 bytes MP3**（`/tmp/icl_tts.mp3`）。
+
+**结论**：合成时 `speaker` 直接用训练时传入的 `custom_speaker_id`（**不用** `icl_speaker_id`），资源头用 `seed-icl-2.0`。
+
+**Step 3｜`status=` 不足时状态查询**：本次训练同步返回 `status=2`，未触发轮询；`POST /api/v3/tts/get_voice` 的请求/响应格式**尚未实测**（见「未验证」）。
 
 ---
 
@@ -152,23 +239,25 @@ curl -s -X POST 'https://openspeech.bytedance.com/api/v3/tts/voice_clone' \
 
 ## 需要的操作（待用户处理）
 
-1. **后付费音色服务** —— 这是当前唯一阻断 Task 11 的缺口。
-   官方原文：「**后付费音色需要开通声音复刻模型2.0服务，并单独开通后付费音色服务。**」
-   - 新版控制台：`console.volcengine.com/speech/new/overview` → 开通管理 → 勾选「豆包声音复刻模型2.0」+「后付费音色服务」
-   - 旧版控制台：`console.volcengine.com/speech/app` → 创建/编辑应用 → 勾选「声音复刻模型2.0」+「音色服务」，并**手动开通「后付费音色服务」**
-   - 对应未授权资源：`volc.megatts.timbre`
-2. **OmniHuman（即梦AI）** —— 控制台开通「OmniHuman1.5」，对应 `cv` 服务（Task 12 用）。
+1. ~~**后付费音色服务**~~ ✅ **已完成**（2026-11-16）—— 用户开通后生效，`voice_clone` 已返回 `status=2`；注意开通存在**数小时级生效延迟**。
+2. ~~**OmniHuman（即梦AI）**~~ ✅ **已完成** —— 2.0 与 1.5 均已开通并实调成功。
 
-开通后重跑 `K` 与 OmniHuman 探针，把真实成功响应补录于此。
+## 未决环境问题（阻断 Task 12 联调，非火山侧）
 
-## 已确认可用的真实契约（可直接据此写 Task 11）
+- **公网入口不可达**：`PUBLIC_BASE_URL=http://23.147.68.16:31527/record-replay`；实测该主机 `ping 100% 丢包`，端口 `7000/31527/80/443/22` 全部 filtered。ChmlFrp 隧道客户端也因 `dial tcp 23.147.68.16:7000: i/o timeout` 无法建立。
+- **隧道端口配错**：`~/Library/Application Support/net.chmlfrp.launcher/g_373833.ini` 中 `local_port=5501`，但本机 API 实际监听 `:3000`（5501 被别的进程占用）。即使隧道恢复也会指向错误端口。
+- **生产替代方案**：OmniHuman 要求 `audio_url` 公网可访问，需改用自有对象存储（如火山 TOS / 阿里云 OSS）或修好 `PUBLIC_BASE_URL` 反向代理。
 
-- TTS：`POST /api/v3/tts/unidirectional`，头 `X-Api-App-Id` + `X-Api-Access-Key`（或 `X-Api-Key`）+ `X-Api-Resource-Id: seed-tts-2.0`，体 `{user:{uid},req_params:{text,speaker,audio_params:{format,sample_rate}}}`，响应 JSON-lines 累积 base64。
-- 训练：`POST /api/v3/tts/voice_clone`（后付费用 `speaker_id:"custom_speaker_id"` + `custom_speaker_id`），体含 base64 音频。
-- 状态：`POST /api/v3/tts/get_voice` 或 legacy `/api/v1/mega_tts/status`。
+## 已确认可用的真实契约（可直接据此写 Task 11 / Task 12）
+
+- TTS（公共音色）：`POST /api/v3/tts/unidirectional`，头 `X-Api-App-Id` + `X-Api-Access-Key`（或 `X-Api-Key`）+ `X-Api-Resource-Id: seed-tts-2.0`，体 `{user:{uid},req_params:{text,speaker,audio_params:{format,sample_rate}}}`，响应 JSON-lines 累积 base64。
+- TTS（复刻音色）：同上，`X-Api-Resource-Id: seed-icl-2.0`，`speaker` = 训练时的 `custom_speaker_id`。
+- 训练：`POST /api/v3/tts/voice_clone`（后付费用 `speaker_id:"custom_speaker_id"` + `custom_speaker_id`），体含 base64 音频；**鉴权仅支持旧版控制台头**（`X-Api-App-Key`/`X-Api-App-Id` + `X-Api-Access-Key`）；**同步返回 `status=2` 即成功**，无需轮询。
+- 状态：`POST /api/v3/tts/get_voice` 或 legacy `/api/v1/mega_tts/status`（**均未实测**）。
+- **OmniHuman 2.0**：见上方「L」，`req_key=realman_avatar_picture_omni20_cvtob`，图片 base64、音频公网 URL 且 **≥4s**。
 
 ## 未验证
 
-- Step 3 训练 / Step 5 克隆音色合成：`volc.megatts.timbre` 未授权，未执行。
-- Task 12 Step 6（OmniHuman 真实 submit + 轮询）：未开通，未执行。
-- `seed-icl-2.0` 下克隆音色合成时的 `req_params.model` / `additions` 具体取值：待训练成功后验证。
+- `POST /api/v3/tts/get_voice` 的请求/响应格式：本次训练同步返回 `status=2`，未触发轮询，故未实测。
+- 训练失败/进行中（`status=1/3`）时的返回形态：未构造。
+- OmniHuman 1.5 端到端产出（仅验证到提交返回 `task_id`，未轮询到 `done`）。
