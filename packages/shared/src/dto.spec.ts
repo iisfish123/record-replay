@@ -22,10 +22,12 @@ describe('shared dto', () => {
     expect(PhoneSchema.safeParse('25920328477').success).toBe(false);
   });
 
-  it('验证码必须 6 位数字', () => {
+  it('验证码为 4-8 位数字', () => {
     expect(SendCodeSchema.safeParse({ phone: '15920328477' }).success).toBe(true);
     expect(LoginSchema.safeParse({ phone: '15920328477', code: 'abc' }).success).toBe(false);
-    expect(LoginSchema.safeParse({ phone: '15920328477', code: '12345' }).success).toBe(false);
+    expect(LoginSchema.safeParse({ phone: '15920328477', code: '123' }).success).toBe(false);
+    // 阿里云 Dypnsapi 按 min=5 生成验证码，5 位必须是合法长度
+    expect(LoginSchema.safeParse({ phone: '15920328477', code: '12345' }).success).toBe(true);
   });
 
   it('提问非空且不超过 200 字', () => {
