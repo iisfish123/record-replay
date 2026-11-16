@@ -1,0 +1,22 @@
+{
+  "pages": [
+    {
+      "path": "pages/login/index",
+      "style": { "navigationBarTitleText": "登录" }
+    },
+    {
+      "path": "pages/home/index",
+      "style": { "navigationBarTitleText": "创建数字人格" }
+    },
+    {
+      "path": "pages/chat/index",
+      "style": { "navigationBarTitleText": "对话" }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "怀念亲人",
+    "navigationBarBackgroundColor": "#FFFFFF",
+    "backgroundColor": "#F6F6F8"
+  }
+}
