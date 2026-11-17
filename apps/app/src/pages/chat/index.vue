@@ -1,6 +1,11 @@
 <template>
-  <div class="page">
-    <div class="stage">
+  <div class="page chat-page">
+    <div class="topbar">
+      <span><span class="dot"></span>DIALOGUE</span>
+      <span @click="goHome" class="back">← 亲人</span>
+    </div>
+
+    <div class="stage" id="stage">
       <video
         v-if="videoUrl"
         class="video"
@@ -11,9 +16,11 @@
         playsinline
         webkit-playsinline
       />
-      <div v-else class="placeholder">
-        <img v-if="poster" class="poster" :src="poster" />
-        <div class="phase">{{ phaseText }}</div>
+      <div v-else class="stage-placeholder">
+        <div class="poster-ring">
+          <img v-if="poster" :src="poster" alt="" />
+        </div>
+        <div class="phase" v-if="phaseText">{{ phaseText }}</div>
       </div>
     </div>
 
@@ -26,17 +33,22 @@
         class="input"
         v-model="question"
         placeholder="对他说点什么…"
-        :disabled="asking"
+        :disabled="cooldown > 0"
         @keydown.enter="onAsk"
       />
-      <button class="btn-send" :disabled="asking" @click="onAsk">发送</button>
+      <button class="btn btn-send" :class="{ counting: cooldown > 0 }" :disabled="cooldown > 0" @click="onAsk">
+        {{ cooldown > 0 ? `${cooldown}s` : '发送' }}
+      </button>
+    </div>
+    <div class="progress" v-if="progressVisible">
+      <div class="progress-bar" :style="{ width: progress + '%' }"></div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { AskSchema } from '@record-replay/shared';
 import { ask, getTask } from '@/api/task';
 import { getPersona } from '@/api/persona';
@@ -46,6 +58,7 @@ import { useSessionStore } from '@/stores/session';
 import { toast } from '@/utils/toast';
 
 const route = useRoute();
+const router = useRouter();
 const session = useSessionStore();
 
 const personaId = ref('');
@@ -53,13 +66,34 @@ const poster = ref('');
 const question = ref('');
 const answerText = ref('');
 const videoUrl = ref('');
-const asking = ref(false);
 const phaseText = ref('输入一句话，让他/她来回答你');
+const cooldown = ref(0); // 60 秒倒数
+const progress = ref(0);
+const progressVisible = ref(false);
+
+let cooldownTimer: ReturnType<typeof setInterval> | null = null;
+
+function startCooldown() {
+  cooldown.value = 60;
+  if (cooldownTimer) clearInterval(cooldownTimer);
+  cooldownTimer = setInterval(() => {
+    cooldown.value -= 1;
+    if (cooldown.value <= 0) {
+      clearInterval(cooldownTimer!);
+      cooldownTimer = null;
+    }
+  }, 1000);
+}
+
+function goHome() {
+  router.replace('/home');
+}
 
 onMounted(async () => {
   personaId.value = (route.query.personaId as string) || session.personaId;
   if (!personaId.value) {
     toast('未找到人格档案');
+    router.replace('/home');
     return;
   }
   try {
@@ -76,10 +110,20 @@ async function onAsk() {
     toast('请输入 1–200 字的问题');
     return;
   }
-  asking.value = true;
+
+  // 点击发送立即禁用按钮 + 60 秒倒数，不等服务器响应
+  startCooldown();
   answerText.value = '';
   videoUrl.value = '';
   phaseText.value = '正在思考…';
+  progressVisible.value = true;
+  progress.value = 0;
+
+  let progTimer: ReturnType<typeof setInterval> | null = null;
+  progTimer = setInterval(() => {
+    progress.value = Math.min(100, progress.value + Math.random() * 8);
+  }, 400);
+
   try {
     const { taskId } = await ask(personaId.value, q);
     session.setTask(taskId);
@@ -100,60 +144,108 @@ async function onAsk() {
     phaseText.value = (e as Error).message;
     toast((e as Error).message);
   } finally {
-    asking.value = false;
+    if (progTimer) clearInterval(progTimer);
+    progress.value = 100;
+    setTimeout(() => {
+      progressVisible.value = false;
+    }, 600);
   }
 }
 </script>
 
 <style scoped>
-.page {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-  padding: 16px;
-  box-sizing: border-box;
+.chat-page {
+  padding: 12px 16px 16px;
+}
+.back {
+  cursor: pointer;
+  color: var(--primary);
 }
 .stage {
   flex: 1;
+  border-radius: var(--radius);
+  overflow: hidden;
+  position: relative;
+  background: #000;
+  border: 1px solid var(--border-soft);
+  min-height: 360px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #101014;
-  border-radius: 12px;
-  overflow: hidden;
-  min-height: 380px;
 }
-.video {
+.stage video {
   width: 100%;
-  height: 450px;
+  height: 100%;
   object-fit: contain;
 }
-.placeholder {
+/* 扫描线装饰 */
+.stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0,
+    transparent 2px,
+    rgba(217, 121, 81, 0.03) 3px,
+    transparent 4px
+  );
+  pointer-events: none;
+}
+.stage-placeholder {
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 14px;
 }
-.poster {
-  width: 160px;
-  height: 160px;
+.poster-ring {
+  width: 150px;
+  height: 150px;
   border-radius: 50%;
-  opacity: 0.55;
+  border: 2px solid var(--border);
+  padding: 4px;
+  box-shadow: 0 0 30px var(--primary-glow), inset 0 0 20px rgba(0, 0, 0, 0.5);
+}
+.poster-ring img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
   object-fit: cover;
+  opacity: 0.7;
 }
 .phase {
-  margin-top: 16px;
-  color: #cfcfd8;
-  font-size: 14px;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-family: var(--mono);
+  letter-spacing: 1px;
+}
+.phase::before {
+  content: '▸ ';
+  color: var(--primary);
 }
 .bubble {
-  margin-top: 14px;
-  background: #ffffff;
-  border-radius: 10px;
+  margin-top: 12px;
+  background: linear-gradient(180deg, var(--panel-1), var(--panel-2));
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
   padding: 14px 16px;
+  position: relative;
+}
+.bubble::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 24px;
+  width: 12px;
+  height: 12px;
+  background: var(--panel-1);
+  border-left: 1px solid var(--border-soft);
+  border-top: 1px solid var(--border-soft);
+  transform: rotate(45deg);
 }
 .quote {
   font-size: 15px;
-  color: #2a2a33;
+  color: var(--text);
   line-height: 1.6;
 }
 .input-row {
@@ -161,28 +253,39 @@ async function onAsk() {
   align-items: center;
   gap: 10px;
   margin-top: 12px;
-  padding-bottom: env(safe-area-inset-bottom);
 }
-.input {
+.input-row .input {
   flex: 1;
-  height: 46px;
-  padding: 0 14px;
-  background: #ffffff;
-  border-radius: 10px;
-  font-size: 15px;
-}
-.input::placeholder {
-  color: #b6b6bf;
 }
 .btn-send {
-  width: 90px;
-  height: 46px;
-  font-size: 15px;
-  color: #ffffff;
-  background: #2b6cff;
-  border-radius: 10px;
+  width: 96px;
+  height: 50px;
+  flex-shrink: 0;
+  color: #1a0e08;
+  background: linear-gradient(180deg, #e8906a, var(--primary));
+  box-shadow: 0 6px 16px var(--primary-glow), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  font-weight: 600;
+  border-radius: var(--radius-sm);
 }
 .btn-send[disabled] {
-  opacity: 0.6;
+  opacity: 0.5;
+  box-shadow: none;
+}
+.btn-send.counting {
+  font-family: var(--mono);
+  font-size: 14px;
+}
+.progress {
+  height: 3px;
+  background: var(--bg-2);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 10px;
+}
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), #e8906a);
+  box-shadow: 0 0 8px var(--primary-glow);
+  transition: width 0.3s;
 }
 </style>

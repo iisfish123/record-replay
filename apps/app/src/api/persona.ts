@@ -19,3 +19,18 @@ export function createPersona(avatarUrl: string, voiceSampleUrl: string): Promis
 export function getPersona(id: string): Promise<PersonaDto> {
   return request({ url: `/personas/${id}` });
 }
+
+export function listPersonas(): Promise<PersonaDto[]> {
+  return request({ url: '/personas' });
+}
+
+export function updatePersona(
+  id: string,
+  patch: { avatarUrl?: string; voiceSampleUrl?: string },
+): Promise<PersonaDto> {
+  return request({ url: `/personas/${id}`, method: 'PUT', data: patch });
+}
+
+export function deletePersona(id: string): Promise<{ ok: boolean }> {
+  return request({ url: `/personas/${id}`, method: 'DELETE' });
+}

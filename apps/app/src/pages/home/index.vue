@@ -1,50 +1,50 @@
 <template>
   <div class="page">
-    <div class="section">
-      <div class="label">1 · 上传一张正面照</div>
-      <div class="hint">单人正脸、光线充足效果最好</div>
-      <img
-        v-if="avatarPreview"
-        class="avatar"
-        :src="avatarPreview"
-        @click="triggerAvatar"
-      />
-      <button v-else class="btn-ghost" @click="triggerAvatar">选择照片</button>
-      <input
-        ref="avatarInput"
-        type="file"
-        accept="image/*"
-        style="display: none"
-        @change="onAvatarChange"
-      />
+    <div class="topbar">
+      <span><span class="dot"></span>PERSONA MANAGE</span>
+      <span>{{ phone }}</span>
     </div>
 
-    <div class="section">
-      <div class="label">2 · 录一段 10–20 秒的朗读</div>
-      <div class="hint">
-        {{ recording ? `录音中 ${seconds}s，点击停止` : tempFile ? '已录制，可重录' : '安静环境下，像平时说话一样念一段' }}
-      </div>
-      <button class="btn-ghost" @click="toggleRecord">
-        {{ recording ? '停止录音' : tempFile ? '重新录音' : '开始录音' }}
+    <div class="header">
+      <h2 class="page-title">我的亲人</h2>
+      <button class="btn-add" @click="goCreate">+ 添加</button>
+    </div>
+
+    <div v-if="loading" class="empty">加载中…</div>
+
+    <div v-else-if="personas.length === 0" class="empty metal">
+      <div class="empty-icon">◈</div>
+      <div class="empty-text">还没有添加亲人</div>
+      <div class="empty-hint">上传一张照片和一段录音，生成数字人格</div>
+      <button class="btn btn-primary" style="margin-top:18px;width:200px;" @click="goCreate">
+        添加亲人
       </button>
     </div>
 
-    <button class="btn-primary" :disabled="submitting" @click="onCreate">
-      {{ submitting ? '生成中…' : '生成数字人格' }}
-    </button>
-
-    <div v-if="statusText" class="status">{{ statusText }}</div>
+    <div v-else class="list">
+      <div v-for="p in personas" :key="p.id" class="card metal">
+        <img class="avatar" :src="absoluteUrl(p.avatarUrl)" @click="enterChat(p)" />
+        <div class="info" @click="enterChat(p)">
+          <div class="name">亲人 {{ indexLabel(p.id) }}</div>
+          <div class="status" :class="p.status">
+            <span class="status-dot"></span>
+            {{ statusText(p.status) }}
+          </div>
+        </div>
+        <div class="actions">
+          <button class="icon-btn" title="编辑" @click="goEdit(p)">✎</button>
+          <button class="icon-btn danger" title="删除" @click="onDelete(p)">✕</button>
+        </div>
+      </div>
+    </div>
 
     <div v-if="confirmVisible" class="modal-mask">
-      <div class="modal">
-        <div class="modal-title">确认生成数字人格？</div>
-        <div class="modal-body">
-          生成后将基于你的录音训练专属音色。复刻音色按「音色个数」一次性计费，单个约 9.9 元。
-          同一账号会复用已有音色，不会重复收费。
-        </div>
+      <div class="modal metal">
+        <div class="modal-title">确认删除这位亲人？</div>
+        <div class="modal-body">删除后无法恢复，确定要删除吗？</div>
         <div class="modal-actions">
-          <button class="btn-ghost" @click="confirmVisible = false">再想想</button>
-          <button class="btn-primary" @click="confirmCreate">确认生成</button>
+          <button class="btn btn-ghost" @click="confirmVisible = false">取消</button>
+          <button class="btn btn-primary" @click="confirmDelete">确认删除</button>
         </div>
       </div>
     </div>
@@ -52,195 +52,248 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import type { PersonaStatus } from '@record-replay/shared';
-import { uploadFile } from '@/api/media';
-import { createPersona, getPersona } from '@/api/persona';
-import { poll } from '@/utils/poll';
-import { useRecorder, isSampleLongEnough, MIN_SAMPLE_SECONDS } from '@/utils/recorder';
+import type { PersonaDto } from '@/api/persona';
+import { listPersonas, deletePersona } from '@/api/persona';
+import { absoluteUrl } from '@/config';
+import { useAuthStore } from '@/stores/auth';
 import { useSessionStore } from '@/stores/session';
 import { toast } from '@/utils/toast';
 
 const router = useRouter();
 const session = useSessionStore();
-const { recording, seconds, tempFile, start, stop } = useRecorder();
+const auth = useAuthStore();
 
-const avatarInput = ref<HTMLInputElement | null>(null);
-const avatarFile = ref<File | null>(null);
-const avatarPreview = ref('');
-const submitting = ref(false);
-const status = ref<PersonaStatus | ''>('');
+const phone = computed(() => auth.phone);
+const personas = ref<PersonaDto[]>([]);
+const loading = ref(true);
 const confirmVisible = ref(false);
+const pendingDelete = ref<PersonaDto | null>(null);
 
-const statusText = computed(() => {
-  switch (status.value) {
-    case 'pending':
-    case 'training':
-      return '正在学习他/她的声音，请稍候…';
-    case 'ready':
-      return '数字人格已就绪';
-    case 'failed':
-      return '创建失败，请重试';
-    default:
-      return '';
+async function load() {
+  loading.value = true;
+  try {
+    personas.value = await listPersonas();
+  } catch (e) {
+    toast((e as Error).message);
+  } finally {
+    loading.value = false;
   }
-});
-
-function triggerAvatar() {
-  avatarInput.value?.click();
 }
 
-function onAvatarChange(e: Event) {
-  const input = e.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (!file) return;
-  avatarFile.value = file;
-  avatarPreview.value = URL.createObjectURL(file);
+function statusText(s: string): string {
+  switch (s) {
+    case 'ready': return '已就绪';
+    case 'pending':
+    case 'training': return '训练中';
+    case 'failed': return '创建失败';
+    default: return s;
+  }
 }
 
-function toggleRecord() {
-  if (recording.value) {
-    stop();
+function indexLabel(id: string): string {
+  const i = personas.value.findIndex((p) => p.id === id);
+  return String(personas.value.length - i).padStart(2, '0');
+}
+
+function enterChat(p: PersonaDto) {
+  if (p.status !== 'ready') {
+    toast(p.status === 'failed' ? '该亲人创建失败，请编辑重试' : '音色训练中，请稍候');
     return;
   }
-  start().catch((e: Error) => {
-    toast(e.message || '录音启动失败');
-  });
+  session.setPersona(p.id);
+  router.push({ path: '/chat', query: { personaId: p.id } });
 }
 
-function onCreate() {
-  if (!avatarFile.value) return toast('请先选择照片');
-  if (!tempFile.value) return toast('请先录制语音');
-  if (!isSampleLongEnough(seconds.value)) {
-    return toast(`录音太短，请至少录 ${MIN_SAMPLE_SECONDS} 秒`);
-  }
+function goCreate() {
+  router.push('/persona');
+}
+
+function goEdit(p: PersonaDto) {
+  router.push(`/persona/${p.id}`);
+}
+
+function onDelete(p: PersonaDto) {
+  pendingDelete.value = p;
   confirmVisible.value = true;
 }
 
-function confirmCreate() {
+async function confirmDelete() {
+  const p = pendingDelete.value;
   confirmVisible.value = false;
-  void doCreate();
-}
-
-async function doCreate() {
-  submitting.value = true;
-  status.value = '';
+  if (!p) return;
   try {
-    const [avatar, voice] = await Promise.all([
-      uploadFile(avatarFile.value!, 'file', avatarFile.value!.name),
-      uploadFile(tempFile.value!, 'file', tempFile.value!.name),
-    ]);
-    const persona = await createPersona(avatar.url, voice.url);
-    session.setPersona(persona.id);
-    status.value = persona.status;
-
-    await poll({
-      fn: () => getPersona(persona.id),
-      isDone: (p) => p.status === 'ready',
-      isFailed: (p) => p.status === 'failed',
-      intervalMs: 3000,
-      timeoutMs: 180_000,
-    });
-    status.value = 'ready';
-    toast('数字人格已就绪');
-    router.push({ path: '/chat', query: { personaId: persona.id } });
+    await deletePersona(p.id);
+    toast('已删除');
+    if (session.personaId === p.id) session.reset();
+    await load();
   } catch (e) {
-    status.value = 'failed';
     toast((e as Error).message);
-  } finally {
-    submitting.value = false;
   }
 }
+
+onMounted(load);
 </script>
 
 <style scoped>
-.page {
-  padding: 20px 20px 40px;
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
 }
-.section {
-  background: #ffffff;
-  border-radius: 12px;
-  padding: 20px;
-  margin-bottom: 16px;
+.page-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 1px;
 }
-.label {
-  font-size: 16px;
+.btn-add {
+  height: 36px;
+  padding: 0 16px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  font-size: 14px;
   font-weight: 600;
-  color: #1a1a1a;
 }
-.hint {
-  margin: 6px 0 14px;
-  font-size: 13px;
-  color: #8a8a94;
+.btn-add:active {
+  background: rgba(217, 121, 81, 0.22);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
 }
 .avatar {
-  width: 100%;
-  height: 280px;
-  border-radius: 10px;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
   object-fit: cover;
-  display: block;
+  border: 2px solid var(--border);
+  cursor: pointer;
+  flex-shrink: 0;
 }
-.btn-ghost {
-  width: 100%;
-  height: 46px;
-  font-size: 15px;
-  color: #2b6cff;
-  background: #eaf1ff;
-  border-radius: 10px;
+.info {
+  flex: 1;
+  cursor: pointer;
+  min-width: 0;
 }
-.btn-primary {
-  width: 100%;
-  height: 48px;
+.name {
   font-size: 16px;
-  color: #ffffff;
-  background: #2b6cff;
-  border-radius: 10px;
-}
-.btn-primary[disabled] {
-  opacity: 0.6;
+  font-weight: 600;
 }
 .status {
-  margin-top: 16px;
-  text-align: center;
-  font-size: 13px;
-  color: #6a6a74;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
 }
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.status.ready .status-dot {
+  background: #4caf7d;
+  box-shadow: 0 0 6px #4caf7d;
+}
+.status.failed .status-dot {
+  background: var(--danger);
+}
+.actions {
+  display: flex;
+  gap: 8px;
+}
+.icon-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--bg-2);
+  border: 1px solid var(--border-soft);
+  color: var(--text-dim);
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.icon-btn:active {
+  background: var(--panel-2);
+}
+.icon-btn.danger {
+  color: var(--danger);
+  border-color: rgba(224, 85, 74, 0.3);
+}
+
+.empty {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--text-dim);
+}
+.empty-icon {
+  font-size: 40px;
+  color: var(--primary);
+  opacity: 0.6;
+  margin-bottom: 12px;
+}
+.empty-text {
+  font-size: 16px;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.empty-hint {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
 .modal-mask {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
-  z-index: 100;
 }
 .modal {
   width: 100%;
   max-width: 340px;
-  background: #ffffff;
-  border-radius: 14px;
   padding: 22px 20px 16px;
 }
 .modal-title {
   font-size: 17px;
   font-weight: 600;
-  color: #1a1a1a;
   text-align: center;
+  margin-bottom: 12px;
 }
 .modal-body {
-  margin: 12px 0 20px;
-  font-size: 14px;
-  line-height: 1.6;
-  color: #6a6a74;
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.7;
+  margin-bottom: 18px;
+  text-align: center;
 }
 .modal-actions {
   display: flex;
-  gap: 12px;
+  gap: 10px;
 }
-.modal-actions .btn-ghost,
-.modal-actions .btn-primary {
-  padding: 0 12px;
+.modal-actions .btn {
+  flex: 1;
+  height: 44px;
+  font-size: 14px;
 }
 </style>

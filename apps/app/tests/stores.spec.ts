@@ -26,8 +26,10 @@ describe('auth store', () => {
     await store.login('15920328477', '123456');
     expect(store.token).toBe('jwt-1');
     expect(store.userId).toBe('u-1');
+    expect(store.phone).toBe('15920328477');
     expect(localStorage.getItem('token')).toBe('jwt-1');
     expect(localStorage.getItem('userId')).toBe('u-1');
+    expect(localStorage.getItem('phone')).toBe('15920328477');
   });
 
   it('setSession 会同步 token 到 request 层', async () => {
@@ -39,18 +41,22 @@ describe('auth store', () => {
 
   it('logout 清空 token 与 storage', () => {
     const store = useAuthStore();
-    store.setSession('jwt-3', 'u-3');
+    store.setSession('jwt-3', 'u-3', '15920328477');
     store.logout();
     expect(store.token).toBe('');
+    expect(store.phone).toBe('');
     expect(localStorage.getItem('token')).toBeNull();
+    expect(localStorage.getItem('phone')).toBeNull();
   });
 
   it('从 storage 恢复 token', () => {
     localStorage.setItem('token', 'restored');
     localStorage.setItem('userId', 'u-9');
+    localStorage.setItem('phone', '15920328477');
     const store = useAuthStore();
     expect(store.token).toBe('restored');
     expect(store.userId).toBe('u-9');
+    expect(store.phone).toBe('15920328477');
   });
 });
 

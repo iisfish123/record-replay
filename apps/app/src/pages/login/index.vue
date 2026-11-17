@@ -1,36 +1,33 @@
 <template>
   <div class="page">
+    <div class="topbar"><span><span class="dot"></span>SYSTEM ONLINE</span><span>v1.0.0</span></div>
+
     <div class="brand">
-      <div class="title">怀念亲人</div>
-      <div class="subtitle">让思念，有回声</div>
+      <div class="logo-mark">◈</div>
+      <h1 class="title">怀念亲人</h1>
+      <div class="sub">LET MEMORY ECHO</div>
     </div>
 
-    <input
-      class="input"
-      v-model="phone"
-      type="tel"
-      maxlength="11"
-      placeholder="请输入手机号"
-    />
-
-    <div class="row">
-      <input
-        class="input code"
-        v-model="code"
-        type="tel"
-        maxlength="8"
-        placeholder="验证码"
-      />
-      <button class="btn-send" :disabled="counting > 0" @click="onSend">
-        {{ counting > 0 ? `${counting}s` : '获取验证码' }}
-      </button>
+    <div class="field">
+      <div class="field-label">PHONE NUMBER</div>
+      <input class="input" v-model="phone" type="tel" maxlength="11" placeholder="请输入手机号" />
     </div>
 
-    <button class="btn-primary" :disabled="loading" @click="onLogin">
-      {{ loading ? '登录中…' : '登录' }}
+    <div class="field">
+      <div class="field-label">VERIFY CODE</div>
+      <div class="code-row">
+        <input class="input" v-model="code" type="tel" maxlength="8" placeholder="验证码" />
+        <button class="btn btn-code" :disabled="counting > 0" @click="onSend">
+          {{ counting > 0 ? `${counting}s` : '获取验证码' }}
+        </button>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" :disabled="loading" @click="onLogin" style="margin-top:6px;">
+      {{ loading ? '登录中…' : '登 录' }}
     </button>
 
-    <div class="agreement">登录即代表同意《用户协议》与《隐私政策》</div>
+    <div class="agreement">登录即代表同意 <a href="#">《用户协议》</a> 与 <a href="#">《隐私政策》</a></div>
   </div>
 </template>
 
@@ -52,17 +49,22 @@ const loading = ref(false);
 
 async function onSend() {
   if (!PhoneSchema.safeParse(phone.value).success) return toast('请输入正确的手机号');
+  // 点击即开始 60s 倒数，不等服务器响应
+  counting.value = 60;
+  const btnText = '获取验证码';
+  const timer = setInterval(() => {
+    counting.value -= 1;
+    if (counting.value <= 0) clearInterval(timer);
+  }, 1000);
   try {
     await sendCode(phone.value);
     toast('验证码已发送');
-    counting.value = 60;
-    const timer = setInterval(() => {
-      counting.value -= 1;
-      if (counting.value <= 0) clearInterval(timer);
-    }, 1000);
   } catch (e) {
+    // 发送失败也不恢复按钮，避免频繁请求
     toast((e as Error).message);
   }
+  // 防止 lint 报未使用
+  void btnText;
 }
 
 async function onLogin() {
@@ -81,71 +83,79 @@ async function onLogin() {
 </script>
 
 <style scoped>
-.page {
-  padding: 60px 24px 0;
-}
 .brand {
-  margin-bottom: 40px;
+  margin: 30px 4px 36px;
+}
+.logo-mark {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: linear-gradient(145deg, var(--primary), #b85c36);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 18px var(--primary-glow), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  margin-bottom: 18px;
+  font-size: 26px;
+  color: #1a0e08;
 }
 .title {
-  font-size: 26px;
+  margin: 0;
+  font-size: 28px;
   font-weight: 700;
-  color: #1a1a1a;
+  letter-spacing: 2px;
+  background: linear-gradient(180deg, #fff, #b8b8c0);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
-.subtitle {
+.sub {
   margin-top: 8px;
-  font-size: 14px;
-  color: #8a8a94;
+  font-size: 13px;
+  color: var(--text-dim);
+  letter-spacing: 4px;
+  font-family: var(--mono);
 }
-.input {
-  width: 100%;
-  height: 48px;
-  padding: 0 14px;
-  background: #ffffff;
-  border-radius: 10px;
-  font-size: 15px;
-  margin-bottom: 12px;
+.field {
+  margin-bottom: 14px;
 }
-.input::placeholder {
-  color: #b6b6bf;
+.field-label {
+  font-size: 11px;
+  color: var(--text-faint);
+  letter-spacing: 2px;
+  font-family: var(--mono);
+  margin-bottom: 8px;
+  text-transform: uppercase;
 }
-.row {
+.code-row {
   display: flex;
-  align-items: flex-start;
   gap: 10px;
 }
-.code {
+.code-row .input {
   flex: 1;
-  margin-bottom: 0;
 }
-.btn-send {
-  width: 120px;
-  height: 48px;
+.btn-code {
+  width: 124px;
+  flex-shrink: 0;
+  height: 50px;
+  background: var(--bg-2);
+  color: var(--primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   font-size: 14px;
-  color: #2b6cff;
-  background: #eaf1ff;
-  border-radius: 10px;
 }
-.btn-send[disabled] {
-  color: #9d9da8;
-  background: #efeff3;
-}
-.btn-primary {
-  margin-top: 24px;
-  width: 100%;
-  height: 48px;
-  font-size: 16px;
-  color: #ffffff;
-  background: #2b6cff;
-  border-radius: 10px;
-}
-.btn-primary[disabled] {
-  opacity: 0.6;
+.btn-code[disabled] {
+  color: var(--text-faint);
+  border-color: var(--border-soft);
 }
 .agreement {
-  margin-top: 20px;
+  margin-top: 18px;
   text-align: center;
-  font-size: 12px;
-  color: #a8a8b2;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.agreement a {
+  color: var(--primary);
+  text-decoration: none;
 }
 </style>
