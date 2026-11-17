@@ -66,6 +66,27 @@ export class PersonaService {
     return persona;
   }
 
+  /** 列出当前用户的所有人格，按创建时间倒序。 */
+  async list(userId: string): Promise<Persona[]> {
+    return this.repo.find({ where: { userId }, order: { createdAt: 'DESC' } });
+  }
+
+  /**
+   * 修改亲人资料。仅更新头像/语音样本字段，不重新训练音色——
+   * 音色克隆按个数计费（MiniMax 9.9 元/个），同一用户复用已有 speakerId。
+   */
+  async update(id: string, userId: string, patch: Partial<Pick<Persona, 'avatarUrl' | 'voiceSampleUrl'>>): Promise<Persona> {
+    const persona = await this.findOwned(id, userId);
+    if (patch.avatarUrl) persona.avatarUrl = patch.avatarUrl;
+    if (patch.voiceSampleUrl) persona.voiceSampleUrl = patch.voiceSampleUrl;
+    return this.repo.save(persona);
+  }
+
+  async remove(id: string, userId: string): Promise<void> {
+    const persona = await this.findOwned(id, userId);
+    await this.repo.remove(persona);
+  }
+
   async updateStatus(id: string, status: Persona['status'], patch: Partial<Persona> = {}): Promise<void> {
     await this.repo.update(id, { status, ...patch });
   }

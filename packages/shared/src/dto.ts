@@ -12,6 +12,12 @@ export const CreatePersonaSchema = z.object({
   voiceSampleUrl: z.string().min(1).max(512),
 });
 
+/** 修改亲人资料：头像/语音样本均可单独更新；音色复用已有 speakerId，不重新训练。 */
+export const UpdatePersonaSchema = z.object({
+  avatarUrl: z.string().min(1).max(512).optional(),
+  voiceSampleUrl: z.string().min(1).max(512).optional(),
+});
+
 export const PersonaStatusSchema = z.enum(['pending', 'training', 'ready', 'failed']);
 export const TaskStatusSchema = z.enum([
   'pending', 'answering', 'tts', 'rendering', 'done', 'failed',
@@ -21,5 +27,6 @@ export type SendCodeDto = z.infer<typeof SendCodeSchema>;
 export type LoginDto = z.infer<typeof LoginSchema>;
 export type AskDto = z.infer<typeof AskSchema>;
 export type CreatePersonaDto = z.infer<typeof CreatePersonaSchema>;
+export type UpdatePersonaDto = z.infer<typeof UpdatePersonaSchema>;
 export type PersonaStatus = z.infer<typeof PersonaStatusSchema>;
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;

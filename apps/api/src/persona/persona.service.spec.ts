@@ -5,9 +5,11 @@ import type { VoiceProvider } from '../providers/voice/voice.provider';
 function makeRepo() {
   return {
     findOne: jest.fn(),
+    find: jest.fn(),
     create: jest.fn((v: any) => v),
-    save: jest.fn(async (v: any) => ({ id: 'p-new', ...v })),
+    save: jest.fn(async (v: any) => ({ id: v.id ?? 'p-new', ...v })),
     update: jest.fn(async () => undefined),
+    remove: jest.fn(async (v: any) => v),
   };
 }
 
@@ -146,6 +148,59 @@ describe('PersonaService', () => {
         'p1',
         expect.objectContaining({ status: 'failed', error: 'boom' }),
       );
+    });
+  });
+
+  describe('list / update / remove', () => {
+    it('list 按 createdAt 倒序返回当前用户所有人格', async () => {
+      const repo = makeRepo();
+      repo.find.mockResolvedValue([{ id: 'p1' }, { id: 'p2' }]);
+      const service = new PersonaService(repo as any, makeVoice('clone'));
+
+      const list = await service.list('u1');
+
+      expect(repo.find).toHaveBeenCalledWith({
+        where: { userId: 'u1' },
+        order: { createdAt: 'DESC' },
+      });
+      expect(list).toHaveLength(2);
+    });
+
+    it('update 仅更新头像/语音字段，不重新训练音色', async () => {
+      const repo = makeRepo();
+      repo.findOne.mockResolvedValue({
+        id: 'p1',
+        userId: 'u1',
+        avatarUrl: '/old.jpg',
+        voiceSampleUrl: '/old.mp3',
+      });
+      const voice = makeVoice('clone');
+      const service = new PersonaService(repo as any, voice);
+
+      const persona = await service.update('p1', 'u1', { avatarUrl: '/new.jpg' });
+
+      expect(persona.avatarUrl).toBe('/new.jpg');
+      expect(persona.voiceSampleUrl).toBe('/old.mp3');
+      expect(repo.save).toHaveBeenCalled();
+      expect(voice.train).not.toHaveBeenCalled();
+    });
+
+    it('update 非本人人格抛 Forbidden', async () => {
+      const repo = makeRepo();
+      repo.findOne.mockResolvedValue({ id: 'p1', userId: 'u-other' });
+      const service = new PersonaService(repo as any, makeVoice('clone'));
+
+      await expect(service.update('p1', 'u1', { avatarUrl: '/x.jpg' })).rejects.toThrow('无权访问');
+    });
+
+    it('remove 删除本人格', async () => {
+      const repo = makeRepo();
+      repo.findOne.mockResolvedValue({ id: 'p1', userId: 'u1' });
+      const service = new PersonaService(repo as any, makeVoice('clone'));
+
+      await service.remove('p1', 'u1');
+
+      expect(repo.remove).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }));
     });
   });
 });
