@@ -30,6 +30,23 @@ export interface AppConfig {
   voiceProvider: 'volcano' | 'minimax';
   renderProvider: 'omnihuman' | 'minimax';
   answerMaxChars: number;
+  log: {
+    kafkaEnabled: boolean;
+    kafkaBrokers: string;
+    kafkaClientId: string;
+    flushIntervalMs: number;
+    batchMax: number;
+    queueMax: number;
+  };
+  clickhouse: {
+    url: string;
+    database: string;
+    user: string;
+    password: string;
+    batchMax: number;
+    flushIntervalMs: number;
+    maxRetry: number;
+  };
 }
 
 export default (): AppConfig => ({
@@ -85,4 +102,22 @@ export default (): AppConfig => ({
   renderProvider: (process.env.RENDER_PROVIDER as 'omnihuman' | 'minimax') ?? 'minimax',
   // MiniMax 参考音频单段上限 15 秒（约 4.5 字/秒），70 字会超出上限被上游拒绝。
   answerMaxChars: parseInt(process.env.ANSWER_MAX_CHARS ?? '60', 10),
+  log: {
+    // ConfigService 不做类型转换，这里就把 'false' 转成 boolean，避免下游拿到字符串真值
+    kafkaEnabled: (process.env.LOG_KAFKA_ENABLED ?? 'true') !== 'false',
+    kafkaBrokers: process.env.KAFKA_BROKERS ?? '127.0.0.1:9093',
+    kafkaClientId: process.env.KAFKA_CLIENT_ID ?? 'record-replay-api',
+    flushIntervalMs: parseInt(process.env.LOG_FLUSH_INTERVAL_MS ?? '500', 10),
+    batchMax: parseInt(process.env.LOG_BATCH_MAX ?? '200', 10),
+    queueMax: parseInt(process.env.LOG_QUEUE_MAX ?? '1000', 10),
+  },
+  clickhouse: {
+    url: process.env.CLICKHOUSE_URL ?? 'http://127.0.0.1:8123',
+    database: process.env.CLICKHOUSE_DATABASE ?? 'record_replay',
+    user: process.env.CLICKHOUSE_USER ?? 'default',
+    password: process.env.CLICKHOUSE_PASSWORD ?? '',
+    batchMax: parseInt(process.env.CH_BATCH_MAX ?? '500', 10),
+    flushIntervalMs: parseInt(process.env.CH_FLUSH_INTERVAL_MS ?? '1000', 10),
+    maxRetry: parseInt(process.env.CH_MAX_RETRY ?? '3', 10),
+  },
 });

@@ -8,3 +8,9 @@
 export const TEST_DATABASE = process.env.MYSQL_TEST_DATABASE ?? 'record_replay_test';
 
 process.env.MYSQL_DATABASE = TEST_DATABASE;
+
+/**
+ * 测试默认走 NoopLogSink：单测/e2e 不应该连真 Kafka，
+ * 需要断言日志的 e2e（logging.e2e-spec.ts）自己 override LOG_SINK 为 InMemoryLogSink。
+ */
+process.env.LOG_KAFKA_ENABLED = 'false';
