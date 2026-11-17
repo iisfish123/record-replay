@@ -11,6 +11,10 @@ export class RenderTask {
   @Column({ type: 'text' })
   question: string;
 
+  /** 创建任务那次 HTTP 请求的 traceId：让后台异步链路能续上 ALS，也方便用 taskId 反查全链路。 */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  traceId: string | null;
+
   @Column({ type: 'text', nullable: true })
   answerText: string | null;
 
