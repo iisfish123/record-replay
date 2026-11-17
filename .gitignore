@@ -6,6 +6,8 @@ dist/
 apps/api/storage/
 assets/
 docker/mysql_data/
+docker/kafka_data/
+docker/clickhouse_data/
 *.log
 .DS_Store
 unpackage/
