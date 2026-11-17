@@ -1,10 +1,22 @@
-# 从 0 到 1：用 Kafka 给 record-replay 做一套日志系统
+# 从 0 到 1：用 Kafka + ClickHouse 给 record-replay 做一套日志系统
 
-> 读者假设：**你从没用过 Kafka**。
+> 读者假设：**你从没用过 Kafka，也没用过 ClickHouse**。
 > 目标：读完能自己把日志系统搭起来，并且**说得清每一步为什么这么做**。
 > 配套实现规格：[`docs/superpowers/specs/2026-11-17-kafka-logging-design.md`](../superpowers/specs/2026-11-17-kafka-logging-design.md)
 
-阅读建议：第 1~3 章讲"是什么、为什么"，第 4 章讲"本项目怎么用"，第 5~6 章讲"怎么一步步做"，第 7 章讲"坑"。**急的话可以直接跳到第 5 章的实操命令**，再回头看原理。
+**整条链路一句话**：`API 产生日志 → Kafka 缓冲 → 消费端批量写入 → ClickHouse 存起来查`。
+
+阅读建议：
+
+| 章节 | 内容 |
+|---|---|
+| 第 1~3 章 | Kafka「是什么、为什么、关键组件」 |
+| 第 4 章 | 本项目怎么用（含 topic 设计与 ClickHouse 速成） |
+| 第 5 章 | X-Trace-Id 从哪来到哪去 |
+| 第 6 章 | 逐文件代码讲解 + 逐步实现 |
+| 第 7~8 章 | 验证、踩坑、速查表 |
+
+**急的话直接跳到第 6.0 节的实操命令**，跑通了再回头看原理。
 
 ---
 
@@ -162,7 +174,10 @@ Broker: record-replay-kafka (127.0.0.1:9093)   ← 单节点，兼任 controller
         │ produce (acks=-1, key=traceId)    │ consume (groupId=rr-log-archiver)
         │                                   ▼
    NestJS API                          log-consumer
-   (KafkaLogSink)                      → storage/logs/<date>/<HH>.jsonl
+   (KafkaLogSink)                      ├─ 攒批 insert
+                                       ▼
+                              ClickHouse record-replay-clickhouse:8123
+                              record_replay.rr_logs (MergeTree, TTL 30 天)
 ```
 
 ---
@@ -186,23 +201,48 @@ NestJS API
        └─ KafkaLogSink（内存队列 + 每 500ms 批量 send）
             │
             ▼
-      record-replay-kafka:9093
+      record-replay-kafka:9093          ← 短期缓冲（3~30 天）
             │
             ▼
       log-consumer（手动提交 offset）
+       └─ 攒批（500 条 / 1 秒）批量 INSERT
             │
             ▼
-      storage/logs/2026-11-17/08.jsonl
+      record-replay-clickhouse:8123     ← 最终存储（TTL 30 天）
+       └─ 表 record_replay.rr_logs
 ```
 
-### 4.2 为什么日志**不落本地文件**，全部进 Kafka
+### 4.2 为什么日志**不落本地文件**，走 Kafka
 
 - **目的**：让"产生日志"和"处理日志"彻底解耦
-- **原因**：API 进程只做"发送"这一个动作，文件 IO、目录切分、磁盘满了怎么办，全是消费端的事
+- **原因**：API 进程只做"发送"这一个动作，落库、重试、磁盘满了怎么办，全是消费端的事
 - **结果**：
   - API 侧代码简单（`emit()` 入队一行）
-  - 消费端可以随时重启、扩容、换实现（JSONL → ES → ClickHouse），API 完全无感
+  - 消费端可以随时重启、扩容、换实现（JSONL → ClickHouse → ES），API 完全无感
   - 同一份日志可以喂给多个消费组（归档 / 告警 / 报表）
+
+### 4.2.1 为什么不直接把日志写进 ClickHouse，中间为什么要 Kafka
+
+这是被问得最多的问题，答案有 4 条：
+
+| 理由 | 展开 |
+|---|---|
+| **削峰** | 突发流量（比如压测）下，日志写入速率可能是稳态的几十倍。ClickHouse 直接扛会被打爆；Kafka 先把洪峰吸住，消费端按自己的节奏慢慢写 |
+| **解耦** | ClickHouse 需要停机维护时，API 照常写 Kafka，数据不丢，等 ClickHouse 恢复再消费 |
+| **多消费者** | 同一份日志，归档组写 ClickHouse，告警组实时扫 error，将来还有报表组。没有 Kafka 就得让 API 挨个通知 |
+| **写入模式不匹配** | ClickHouse **极度讨厌高频小批写入**（会产生大量 part 触发 `Too many parts`）。Kafka 天然按批投递，消费端攒批后一次 INSERT 几百条，正好治这个病 |
+
+一句话：**Kafka 是"缓冲池 + 分发器"，ClickHouse 是"仓库"。**
+
+### 4.2.2 为什么是 ClickHouse，而不是 MySQL / ES
+
+| 存储 | 适不适合存日志 | 原因 |
+|---|---|---|
+| **MySQL** | ❌ | 行存 + B+ 树，适合点查和事务。日志是"写多读少、按时间范围扫、要聚合"，MySQL 会被写爆、聚合也慢 |
+| **Elasticsearch** | ✅ 但重 | 全文检索最强，适合"搜关键字"。但资源占用高（JVM + 堆），运维复杂。日志分析多数是**结构化聚合**（耗时、错误率、计数），不一定需要全文检索 |
+| **ClickHouse** | ✅✅ | 列存 + 向量化执行，"扫一亿行做 group by"是它的主场。压缩率极高（日志常压到 1/10）。SQL 友好，一条 SQL 就能算 P95 |
+
+**结论**：日志分析 90% 是结构化的聚合统计 → ClickHouse 性价比最高。真需要全文检索再叠加 ES。
 
 ### 4.3 为什么 topic 这么设计（你特别要求要讲的部分）
 
@@ -224,6 +264,8 @@ NestJS API
 如果按"一条日志一个 topic" → topic 数量爆炸，运维成本失控。
 
 **结论**：按 **生命周期 + 用途** 聚类，3 个刚好。
+
+> ⚠️ **重要区分**：这里的 3 天 / 30 天是 **Kafka 侧的保留期**，只决定"消息在 Kafka 磁盘上留多久"。数据真正的长期存储是 **ClickHouse**（`rr_logs` 表统一 TTL 30 天）。因为归档消费组一直在线消费，Kafka 侧 3 天足够安全落库。**别把 Kafka 的保留期当成数据生命周期。**
 
 #### 为什么是 3 个分区（而不是 1 个或 10 个）
 
@@ -281,6 +323,165 @@ TaskTracer           ─┘                     └─ InMemoryLogSink（测试�
 | 队列堆到 1000 条 | **丢最旧的** + stderr 告警（说明消费端严重跟不上） |
 | `LOG_KAFKA_ENABLED=false` | 用 `NoopLogSink`，本地不起 Kafka 也能开发调试 |
 | 进程退出 | `onApplicationShutdown` 尽力 flush 一次 |
+
+### 4.7 ClickHouse 速成（新手向）
+
+#### 4.7.1 一句话：列存数据库
+
+MySQL 是**行存**：一行数据（id/name/age）在磁盘上挨着放。
+ClickHouse 是**列存**：一列数据（所有 name）在磁盘上挨着放。
+
+```
+行存（MySQL）                       列存（ClickHouse）
+[1, Alice, 20]                     [1, 2, 3, 4, 5]        ← id 列
+[2, Bob,   22]                     [Alice, Bob, ...]      ← name 列
+[3, Carol, 20]                     [20, 22, 20, ...]      ← age 列
+```
+
+**为什么对日志特别有用**：
+
+| 特性 | 说明 |
+|---|---|
+| 查一列只读一列 | `SELECT avg(duration_ms)` 只读 `duration_ms` 一列，不用把整行读出来 |
+| 同列数据相似 | 相似数据压缩率极高。"ERROR/ERROR/ERROR…" 几乎不占空间 |
+| 向量化执行 | 一次处理一批值（而不是一行行循环），CPU 利用率高 |
+| 顺序扫描极快 | 配合 `ORDER BY` 的排序键，能直接跳过无关的数据块 |
+
+**代价**：行级更新/删除很慢（日志根本不需要），所以不适合做业务库。
+
+#### 4.7.2 MergeTree：ClickHouse 的引擎
+
+建表必须写 `ENGINE = ???`。日志场景选 `MergeTree`（ClickHouse 最核心的引擎）。
+
+它的工作机制：
+
+1. 每次 `INSERT` 在磁盘上写一个 **part**（不可变的数据块）
+2. 后台线程不断把多个小 part **merge** 成更大的 part
+3. 查询时对所有 part 并行扫描
+
+> 关键推论：**part 太多会拖垮性能**，所以写入必须攒批（见 4.7.4）。
+
+#### 4.7.3 三个关键子句：ORDER BY / PARTITION BY / TTL
+
+```sql
+ENGINE = MergeTree
+PARTITION BY toYYYYMMDD(ts)      -- ① 按天分区
+ORDER BY (kind, ts)              -- ② 排序键（≈主键）
+TTL toDateTime(ts) + INTERVAL 30 DAY   -- ③ 30 天后自动删除
+```
+
+| 子句 | 作用 | 类比 |
+|---|---|---|
+| `PARTITION BY` | 数据按天切成多个目录 | 把书按年份放进不同书架 |
+| `ORDER BY` | 分区内数据按这个顺序物理排列，并生成稀疏索引（每 8192 行一个 granule） | 书架里按书名字母排序，找书时能跳读 |
+| `TTL` | 到期的数据自动删除（按分区整块删，很快） | 旧书自动下架，不用人工清理 |
+
+**`ORDER BY (kind, ts)` 怎么选**：原则是"把最常用的查询条件放前面"。
+
+- 我们最常见的查询：`WHERE kind='error' AND ts BETWEEN ...` → 所以 `kind, ts` 打头
+- 按 `trace_id` 查虽然是高频需求，但 trace_id 基数太高（几乎每行不同），不适合做排序键前缀 → 用**跳数索引**解决：
+
+```sql
+INDEX idx_trace_id trace_id TYPE bloom_filter GRANULARITY 1
+```
+
+bloom filter 能快速判断"这个 granule 里**肯定没有**这个 trace_id"，从而跳过绝大多数数据。
+
+#### 4.7.4 为什么 ClickHouse 讨厌"高频小批写入"
+
+这是新手最容易踩的坑：
+
+```ts
+// ❌ 灾难：一条条 insert
+for (const row of rows) {
+  await client.insert({ table: 'rr_logs', values: [row], format: 'JSONEachRow' });
+}
+// 1000 条 → 1000 个 part → ClickHouse 报 "Too many parts" 并拒绝写入
+```
+
+```ts
+// ✅ 正确：攒批，一次 500 条
+await client.insert({ table: 'rr_logs', values: rows.slice(0, 500), format: 'JSONEachRow' });
+```
+
+ClickHouse 的写入哲学是：**"批量攒够了再喂给我，我一次吃完"。**
+所以我们的 `clickhouse-writer.ts` 必须实现"攒批 + 定时 flush"（500 条 或 1 秒，先到先发）。
+
+#### 4.7.5 `LowCardinality` 是什么
+
+`kind` / `level` / `method` 这类字段，**取值种类少但重复极多**。`LowCardinality(String)` 会把它字典编码（存"编号"而不是"字符串"），查询和存储都更省。这是 ClickHouse 里针对低基数列的标准优化。
+
+#### 4.7.6 本项目建表 DDL 逐行解读
+
+```sql
+CREATE TABLE IF NOT EXISTS record_replay.rr_logs
+(
+    ts                DateTime64(3, 'UTC'),   -- 毫秒精度时间戳，时区 UTC
+    level             LowCardinality(String), -- info/warn/error，就 3 种值 → 低基数
+    kind              LowCardinality(String), -- access/error/trace/app，4 种值 → 低基数
+    trace_id          String,                -- 高基数，配 bloom filter 索引
+    msg               String,
+    user_id           String DEFAULT '',     -- 稀疏字段统一给空串默认值
+    persona_id        String DEFAULT '',
+    task_id           String DEFAULT '',
+    method            LowCardinality(String) DEFAULT '',
+    path              String DEFAULT '',
+    status            UInt16 DEFAULT 0,      -- 无符号整数，HTTP 状态码够用
+    duration_ms       UInt32 DEFAULT 0,      -- 无符号整数，耗时
+    code              LowCardinality(String) DEFAULT '',
+    stack             String DEFAULT '',
+    event             LowCardinality(String) DEFAULT '',  -- 7 种埋点事件 → 低基数
+    stage             LowCardinality(String) DEFAULT '',
+    total_duration_ms UInt32 DEFAULT 0,
+    meta              String DEFAULT '',     -- 零散字段塞 JSON 字符串，避免频繁改表
+    INDEX idx_trace_id trace_id TYPE bloom_filter GRANULARITY 1
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMMDD(ts)
+ORDER BY (kind, ts)
+TTL toDateTime(ts) + INTERVAL 30 DAY
+SETTINGS index_granularity = 8192;          -- 每 8192 行一个 granule（默认值，显式写出便于理解）
+```
+
+设计要点：**固定字段拍平成列**（能索引、能聚合），**零散字段塞 `meta`**（不为了偶尔的字段改表结构）。
+
+#### 4.7.7 几条马上能用的查询
+
+```sql
+-- 1) 某条链路的完整时序
+SELECT ts, kind, event, stage, duration_ms, msg
+FROM record_replay.rr_logs
+WHERE trace_id = '0f5b1c2e-...'
+ORDER BY ts;
+
+-- 2) 出片各阶段平均耗时 / P95（这就是列存的威力）
+SELECT event,
+       count()                                 AS cnt,
+       round(avg(duration_ms))                 AS avg_ms,
+       quantile(0.95)(duration_ms)             AS p95_ms
+FROM record_replay.rr_logs
+WHERE kind = 'trace' AND ts > now() - INTERVAL 7 DAY
+GROUP BY event
+ORDER BY cnt DESC;
+
+-- 3) 最近 1 小时的错误 Top 10
+SELECT code, count() AS cnt, max(ts) AS last_seen
+FROM record_replay.rr_logs
+WHERE kind = 'error' AND ts > now() - INTERVAL 1 HOUR
+GROUP BY code
+ORDER BY cnt DESC
+LIMIT 10;
+
+-- 4) 出片成功率
+SELECT
+  countIf(event='task.video.ready') AS ok,
+  countIf(event='task.failed')      AS failed,
+  round(ok / (ok + failed) * 100, 1) AS success_rate
+FROM record_replay.rr_logs
+WHERE kind = 'trace' AND ts > now() - INTERVAL 1 DAY;
+```
+
+> 这几条 SQL 一眼看出区别：**同样的分析，SQL 是声明式的，而 Kafka 里只能靠消费者自己算。**
 
 ---
 
@@ -413,20 +614,28 @@ t3 之后的日志如果不管，就会**丢失 traceId**。解决办法：
 ```bash
 cd /Users/lkz/202507/record-replay
 
-# 1) 起 Kafka（镜像本地已有，pull_policy: never，不会去拉）
-docker compose -f docker/docker-compose.yml up -d kafka
+# 1) 起 Kafka 与 ClickHouse（镜像本地已有，pull_policy: never，不会去拉）
+docker compose -f docker/docker-compose.yml up -d kafka kafka-init clickhouse
 
 # 2) 确认起来
-docker ps | grep record-replay-kafka
+docker ps | grep -E 'record-replay-(kafka|clickhouse)'
 
-# 3) 查看 topic（首次为空，kafka-init 容器建完就有 3 个）
+# 3) 查看 topic（kafka-init 容器建完就有 3 个）
 docker exec record-replay-kafka \
   /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server 127.0.0.1:9092 --list
+
+# 4) 确认 ClickHouse 活着（返回 Ok）
+curl -s http://127.0.0.1:8123/ping
+
+# 5) 装依赖（Kafka 客户端 + ClickHouse 官方客户端）
+pnpm --filter @record-replay/api add kafkajs @clickhouse/client
 ```
 
-> ⚠️ **端口注意**：本机 9092 已被 `li-dify-kafka` 占用，所以本项目映射的是 **`127.0.0.1:9093`**。
-> - **宿主机上的代码**（NestJS / consumer）用 `127.0.0.1:9093`
-> - **容器内部**的命令（`docker exec`）用容器内的 `127.0.0.1:9092`
+> ⚠️ **端口注意**：
+> - 本机 9092 已被 `li-dify-kafka` 占用，所以 Kafka 映射到 **`127.0.0.1:9093`**
+>   - **宿主机上的代码**（NestJS / consumer）用 `127.0.0.1:9093`
+>   - **容器内部**的命令（`docker exec`）用容器内的 `127.0.0.1:9092`
+> - ClickHouse HTTP 映射到 **`127.0.0.1:8123`**，宿主机代码与 `docker exec` 都用 8123
 
 ### 6.1 第一步：抽象层 `log-sink.ts`
 
@@ -887,54 +1096,189 @@ app.use((req, res, next) => traceMiddleware.use(req, res, next));
 
 ### 6.11 第十一步：消费端 `consumer/main.ts`
 
+先定义 schema 常量（DDL 只写一次，消费端自举 + 人工排查都复用它）：
+
+```ts
+// apps/api/src/log/consumer/clickhouse-schema.ts
+export const CREATE_DATABASE_SQL = `CREATE DATABASE IF NOT EXISTS record_replay`;
+
+export const CREATE_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS record_replay.rr_logs
+(
+    ts                DateTime64(3, 'UTC'),
+    level             LowCardinality(String),
+    kind              LowCardinality(String),
+    trace_id          String,
+    msg               String,
+    user_id           String DEFAULT '',
+    persona_id        String DEFAULT '',
+    task_id           String DEFAULT '',
+    method            LowCardinality(String) DEFAULT '',
+    path              String DEFAULT '',
+    status            UInt16 DEFAULT 0,
+    duration_ms       UInt32 DEFAULT 0,
+    code              LowCardinality(String) DEFAULT '',
+    stack             String DEFAULT '',
+    event             LowCardinality(String) DEFAULT '',
+    stage             LowCardinality(String) DEFAULT '',
+    total_duration_ms UInt32 DEFAULT 0,
+    meta              String DEFAULT '',
+    INDEX idx_trace_id trace_id TYPE bloom_filter GRANULARITY 1
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMMDD(ts)
+ORDER BY (kind, ts)
+TTL toDateTime(ts) + INTERVAL 30 DAY
+SETTINGS index_granularity = 8192`;
+```
+
+再写攒批写入器（这是消费端的核心）：
+
+```ts
+// apps/api/src/log/consumer/clickhouse-writer.ts
+import { createClient, type ClickHouseClient } from '@clickhouse/client';
+
+/** LogRecord（下划线化）→ rr_logs 一行 */
+function toRow(r: any) {
+  return {
+    ts: r.ts,                       // ISO 字符串，靠 best_effort 解析
+    level: r.level,
+    kind: r.kind,
+    trace_id: r.traceId,
+    msg: r.msg,
+    user_id: r.userId ?? '',
+    persona_id: r.personaId ?? '',
+    task_id: r.taskId ?? '',
+    method: r.method ?? '',
+    path: r.path ?? '',
+    status: r.status ?? 0,
+    duration_ms: r.durationMs ?? 0,
+    code: r.code ?? '',
+    stack: r.stack ?? '',
+    event: r.event ?? '',
+    stage: r.stage ?? '',
+    total_duration_ms: r.totalDurationMs ?? 0,
+    meta: r.meta ? JSON.stringify(r.meta) : '',   // 对象序列化成字符串
+  };
+}
+
+export class ClickHouseWriter {
+  private readonly client: ClickHouseClient;
+  private buffer: any[] = [];
+  private timer?: NodeJS.Timeout;
+  private flushing = false;
+
+  constructor(
+    url: string,
+    private readonly database: string,
+    private readonly user: string,
+    private readonly password: string,
+    private readonly batchMax = 500,
+    private readonly flushIntervalMs = 1000,
+    private readonly maxRetry = 3,
+  ) {
+    this.client = createClient({
+      url,
+      username: user,
+      password,
+      database,
+      clickhouse_settings: { date_time_input_format: 'best_effort' }, // 让 ISO 字符串可直接解析
+    });
+  }
+
+  /** 幂等建库建表 */
+  async ensureSchema(dbSql: string, tableSql: string): Promise<void> {
+    await this.client.command({ query: dbSql });
+    await this.client.command({ query: tableSql });
+  }
+
+  /** 入缓冲；满 batchMax 立即 flush */
+  async insert(records: any[]): Promise<void> {
+    this.buffer.push(...records.map(toRow));
+    if (this.buffer.length >= this.batchMax) await this.flush();
+    else if (!this.timer) this.timer = setTimeout(() => void this.flush(), this.flushIntervalMs);
+  }
+
+  /** 发送缓冲内容；失败重试 maxRetry 次，最终失败则抛出（上层据此不提交 offset） */
+  async flush(): Promise<void> {
+    if (this.flushing || this.buffer.length === 0) return;
+    this.flushing = true;
+    if (this.timer) { clearTimeout(this.timer); this.timer = undefined; }
+
+    const batch = this.buffer.splice(0, this.batchMax);
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await this.client.insert({ table: 'rr_logs', values: batch, format: 'JSONEachRow' });
+        break;
+      } catch (err) {
+        if (attempt >= this.maxRetry) {
+          this.buffer.unshift(...batch);      // 放回去，等下一批重投
+          this.flushing = false;
+          throw err;
+        }
+        await new Promise((r) => setTimeout(r, 200 * attempt));  // 退避
+      }
+    }
+    this.flushing = false;
+    if (this.buffer.length > 0) await this.flush();   // 还有残留就继续
+  }
+
+  async close(): Promise<void> {
+    if (this.timer) clearTimeout(this.timer);
+    await this.flush();
+    await this.client.close();
+  }
+}
+```
+
+最后是进程入口（消费 → 攒批 → 写库 → 手动提交 offset）：
+
 ```ts
 // apps/api/src/log/consumer/main.ts
 import { Kafka } from 'kafkajs';
-import { JsonlWriter } from './jsonl-writer';
+import { ClickHouseWriter } from './clickhouse-writer';
+import { CREATE_DATABASE_SQL, CREATE_TABLE_SQL } from './clickhouse-schema';
 
 const TOPICS = ['rr.api.access', 'rr.api.error', 'rr.task.trace'];
 
 async function main() {
-  const writer = new JsonlWriter(process.env.LOG_DIR ?? 'storage/logs');
-  const kafka = new Kafka({ clientId: 'rr-log-archiver', brokers: (process.env.KAFKA_BROKERS ?? '127.0.0.1:9093').split(',') });
+  const writer = new ClickHouseWriter(
+    process.env.CLICKHOUSE_URL ?? 'http://127.0.0.1:8123',
+    process.env.CLICKHOUSE_DATABASE ?? 'record_replay',
+    process.env.CLICKHOUSE_USER ?? 'default',
+    process.env.CLICKHOUSE_PASSWORD ?? '',
+  );
+  await writer.ensureSchema(CREATE_DATABASE_SQL, CREATE_TABLE_SQL);   // 消费端自举建表
+
+  const kafka = new Kafka({
+    clientId: 'rr-log-archiver',
+    brokers: (process.env.KAFKA_BROKERS ?? '127.0.0.1:9093').split(','),
+  });
   const consumer = kafka.consumer({ groupId: 'rr-log-archiver' });
   await consumer.connect();
   await consumer.subscribe({ topics: TOPICS, fromBeginning: false });
 
   await consumer.run({
-    eachBatchAutoResolve: false,      // 手动提交
+    eachBatchAutoResolve: false,          // ★ 手动提交：写库成功才提交 offset
     eachBatch: async ({ batch, resolveOffset, heartbeat, commitOffsetsIfNecessary }) => {
-      for (const message of batch.messages) {
-        if (!message.value) continue;
-        await writer.write(batch.topic, message.value.toString());
-        resolveOffset(message.offset);
-        await heartbeat();
-      }
-      await commitOffsetsIfNecessary();  // 处理完才提交 offset
+      const records = batch.messages
+        .filter((m) => m.value)
+        .map((m) => JSON.parse(m.value!.toString()));
+
+      await writer.insert(records);       // 写库失败会抛错 → 后面不执行 → offset 不提交 → 下次重投
+
+      for (const m of batch.messages) resolveOffset(m.offset);
+      await heartbeat();
+      await commitOffsetsIfNecessary();
     },
   });
+
+  const shutdown = async () => { await consumer.disconnect(); await writer.close(); process.exit(0); };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
 
 main().catch((err) => { process.stderr.write(String(err)); process.exit(1); });
-```
-
-```ts
-// apps/api/src/log/consumer/jsonl-writer.ts
-import { appendFile, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
-
-export class JsonlWriter {
-  constructor(private readonly root: string) {}
-
-  async write(_topic: string, line: string): Promise<void> {
-    const now = new Date();
-    const date = now.toISOString().slice(0, 10);          // YYYY-MM-DD
-    const hour = String(now.getUTCHours()).padStart(2, '0'); // HH
-    const dir = join(this.root, date);
-    await mkdir(dir, { recursive: true });
-    await appendFile(join(dir, `${hour}.jsonl`), `${line}\n`, 'utf8');
-  }
-}
 ```
 
 `package.json` 加：
@@ -942,6 +1286,8 @@ export class JsonlWriter {
 ```json
 "log:consumer": "ts-node -r tsconfig-paths/register src/log/consumer/main.ts"
 ```
+
+> **注意"手动提交"与"写库失败"的配合**：`writer.insert()` 抛错时，`resolveOffset` / `commitOffsetsIfNecessary` 都不会执行 → Kafka 认为这批没消费成功 → 重启或 rebalance 后会重新投递 → **日志不丢**（代价是可能重复，见第 7 章）。
 
 ---
 
@@ -955,14 +1301,32 @@ pnpm --filter @record-replay/api log:consumer
 
 # 窗口 2：起 API（略）
 
-# 窗口 3：手机走一次「提问 → 出片」，然后实时看日志
-tail -f storage/logs/$(date +%Y-%m-%d)/*.jsonl | jq -c '{traceId,event,taskId,durationMs,totalDurationMs}'
+# 窗口 3：手机走一次「提问 → 出片」，然后查最新一条链路的完整时序
+docker exec -it record-replay-clickhouse clickhouse-client --query "
+SELECT ts, kind, event, stage, duration_ms, msg
+FROM record_replay.rr_logs
+WHERE kind = 'trace'
+ORDER BY ts DESC
+LIMIT 20 FORMAT Vertical"
 ```
 
-**期望**：看到 7 条事件，`traceId` 全部相同，顺序为
+**期望**：看到 7 条事件，`trace_id` 全部相同，顺序为
 `task.created → task.answered → task.tts.done → task.render.submitted → task.render.polled* → task.video.ready`
 
-随手验一条 HTTP 请求：
+顺手取一条 traceId，验证"一键串起全链路"：
+
+```bash
+TRACE_ID=$(docker exec record-replay-clickhouse clickhouse-client --query \
+  "SELECT trace_id FROM record_replay.rr_logs WHERE kind='trace' ORDER BY ts DESC LIMIT 1")
+
+docker exec record-replay-clickhouse clickhouse-client --query "
+SELECT ts, kind, event, stage, duration_ms, msg
+FROM record_replay.rr_logs
+WHERE trace_id = '$TRACE_ID'
+ORDER BY ts FORMAT Vertical"
+```
+
+验证一条 HTTP 请求的响应头：
 
 ```bash
 curl -i http://127.0.0.1:3000/health | grep -i x-trace-id
@@ -977,10 +1341,14 @@ curl -i http://127.0.0.1:3000/health | grep -i x-trace-id
 | **kafkajs 连不上但 kafka 已起** | `ECONNREFUSED` | 差在 healthcheck 未就绪，等 10 秒 |
 | **topic 不存在** | `UNKNOWN_TOPIC_OR_PARTITION` | `AUTO_CREATE_TOPICS_ENABLE=false` 时不会自动建 → 靠 `kafka-init` 或 `admin.createTopics` |
 | **日志顺序错乱** | 消费端看到的顺序和产生顺序不一致 | 检查 partition key 是否真的传了 `traceId`（key 为 null 会轮询分散） |
-| **重复落盘** | 同一条日志出现两次 | at-least-once 的正常现象；按 `traceId+ts+event` 去重 |
+| **重复写库** | 同一条日志在 ClickHouse 出现两次 | at-least-once 的正常现象；查询侧按 `trace_id+ts+event` 去重，或换 `ReplacingMergeTree` |
 | **看不到后台任务日志** | 出片埋点 traceId 是 `-` | 忘了在 `process()` 里 `runWithTrace(task.traceId, ...)` 重建上下文 |
 | **进程退出丢日志** | 最后 500ms 的日志没了 | 正常（内存队列）；`onApplicationShutdown` 已尽力 flush |
-| **`kafka_data` 目录权限** | 容器起不来 | Bitnami 镜像按 UID 1001 运行，必要时 `chown -R 1001 ./kafka_data` |
+| **`Too many parts`** | ClickHouse 拒绝写入 | 写入频率过高 → 必须攒批（`CH_BATCH_MAX` 调大或 `CH_FLUSH_INTERVAL_MS` 调大） |
+| **时间戳差 8 小时** | 查出来的 `ts` 比本地时间早 8 小时 | ClickHouse 列是 UTC，查询时用 `toTimeZone(ts,'Asia/Shanghai')` 转换，别改列的时区 |
+| **`meta` 查询不出来** | `meta` 是一坨转义 JSON | 存的是 JSON 字符串；查询用 `JSONExtractString(meta,'xxx')` |
+| **数据卷权限** | ClickHouse 容器起不来 | Bitnami 镜像按 UID 1001 运行，`chown -R 1001 ./clickhouse_data` |
+| **`kafka_data` 目录权限** | 容器起不来 | 同上，`chown -R 1001 ./kafka_data` |
 
 ### 7.3 生产与 Demo 的差异（心里要有数）
 
@@ -991,8 +1359,9 @@ curl -i http://127.0.0.1:3000/health | grep -i x-trace-id
 | `min.insync.replicas` | 1 | 2 |
 | 认证 | PLAINTEXT（无认证） | SASL_SSL |
 | topic 创建 | `kafka-init` 容器 | IaC / 运维平台统一管控 |
-| 日志去向 | JSONL 文件 | ES / ClickHouse / S3 |
-| 监控 | 无 | Lag 监控、告警、Grafana 看板 |
+| ClickHouse | 单节点、空密码 | 集群（分片 + 副本）、认证、网络隔离 |
+| ClickHouse 表结构 | `MergeTree` 单表 | 冷热分层 / `ReplicatedMergeTree` / 物化视图预聚合 |
+| 监控 | 无 | Kafka Lag 监控、ClickHouse 慢查询、Grafana 看板 |
 | 消费者 | 单实例 | 多实例 + 消费组自动负载均衡 |
 
 **记住**：Demo 里这些"简化"不是不懂，而是**有意为之的取舍**。面试/评审时能说清"为什么这里可以简化、生产该怎么补"，比堆配置更有说服力。
@@ -1002,9 +1371,10 @@ curl -i http://127.0.0.1:3000/health | grep -i x-trace-id
 ## 第 8 章 一张速查表（贴在墙上）
 
 ```bash
-# 起 Kafka
-docker compose -f docker/docker-compose.yml up -d kafka kafka-init
+# 起 Kafka + ClickHouse
+docker compose -f docker/docker-compose.yml up -d kafka kafka-init clickhouse
 
+# ---------- Kafka ----------
 # 列 topic
 docker exec record-replay-kafka /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server 127.0.0.1:9092 --list
 
@@ -1019,9 +1389,35 @@ docker exec -it record-replay-kafka /opt/bitnami/kafka/bin/kafka-console-consume
 
 # 看消费组 lag（消费有没有跟上）
 docker exec record-replay-kafka /opt/bitnami/kafka/bin/kafka-consumer-groups.sh --bootstrap-server 127.0.0.1:9092 --describe --group rr-log-archiver
+
+# ---------- ClickHouse ----------
+# 存活检查
+curl -s http://127.0.0.1:8123/ping          # 期望：Ok
+
+# 看表结构
+docker exec -it record-replay-clickhouse clickhouse-client --query "SHOW CREATE TABLE record_replay.rr_logs FORMAT TSVRaw"
+
+# 最近 10 条日志
+docker exec -it record-replay-clickhouse clickhouse-client --query "
+SELECT ts, kind, event, trace_id, msg FROM record_replay.rr_logs ORDER BY ts DESC LIMIT 10 FORMAT Vertical"
+
+# 按 traceId 查全链路
+docker exec -it record-replay-clickhouse clickhouse-client --query "
+SELECT ts, kind, event, stage, duration_ms, msg FROM record_replay.rr_logs
+WHERE trace_id='<把traceId粘这里>' ORDER BY ts FORMAT Vertical"
+
+# 各阶段耗时 P95
+docker exec -it record-replay-clickhouse clickhouse-client --query "
+SELECT event, count() c, round(avg(duration_ms)) avg_ms, quantile(0.95)(duration_ms) p95_ms
+FROM record_replay.rr_logs WHERE kind='trace' GROUP BY event ORDER BY c DESC"
+
+# 表占用空间（体验一下列存的压缩率）
+docker exec -it record-replay-clickhouse clickhouse-client --query "
+SELECT formatReadableSize(sum(bytes_on_disk)) AS size, sum(rows) AS rows
+FROM system.parts WHERE database='record_replay' AND table='rr_logs' AND active"
 ```
 
-**核心概念一句话回顾**：
+**核心概念一句话回顾（Kafka）**：
 
 - **Topic** = 分类；**Partition** = 并行单元（**只增不减**）
 - **Key 相同 → 同分区 → 分区内有序**（所以 key = traceId）
@@ -1029,3 +1425,13 @@ docker exec record-replay-kafka /opt/bitnami/kafka/bin/kafka-consumer-groups.sh 
 - **`acks=-1`** = 所有 ISR 写成功才确认；**幂等生产者**防重复
 - **KRaft** = 不需要 ZooKeeper 的 Kafka（4.0 起 ZooKeeper 已移除）
 - **保留期（retention）** 才是消息的死因，不是"被消费"
+
+**核心概念一句话回顾（ClickHouse）**：
+
+- **列存** = 查一列只读一列；**压缩率极高**
+- **MergeTree** = 最核心的表引擎；每次 INSERT 产生一个 **part**，后台 merge
+- **ORDER BY** = 排序键，决定"哪些数据能跳过"；最常用的过滤条件放最前
+- **PARTITION BY** = 按天分区，查询走分区裁剪，TTL 按分区整块删
+- **TTL** = 自动过期删除，不用写清理脚本
+- **怕小批写入** → 必须攒批（500 条 / 1 秒）
+- **LowCardinality** = 低基数列（kind/level/event）的字典编码优化
