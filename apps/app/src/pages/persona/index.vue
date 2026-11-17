@@ -8,6 +8,31 @@
     <div class="metal step">
       <div class="step-head">
         <span class="step-num">01</span>
+        <span class="step-title">填写称呼与关系</span>
+      </div>
+      <div class="step-hint">用一个称呼或姓名标记这位亲人，并选择你们的关系</div>
+      <div class="field">
+        <label class="field-label">称呼 / 姓名</label>
+        <input
+          v-model="name"
+          class="input"
+          type="text"
+          maxlength="20"
+          placeholder="例如：爸爸、妈妈、老王"
+        />
+      </div>
+      <div class="field">
+        <label class="field-label">关系</label>
+        <select v-model="relation" class="input select">
+          <option value="" disabled>请选择关系</option>
+          <option v-for="r in PERSONA_RELATIONS" :key="r" :value="r">{{ r }}</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="metal step">
+      <div class="step-head">
+        <span class="step-num">02</span>
         <span class="step-title">上传一张正面照</span>
       </div>
       <div class="step-hint">单人正脸、光线充足效果最好</div>
@@ -23,7 +48,7 @@
 
     <div class="metal step">
       <div class="step-head">
-        <span class="step-num">02</span>
+        <span class="step-num">03</span>
         <span class="step-title">录一段 10–20 秒朗读</span>
       </div>
       <div class="step-hint">{{ recordHint }}</div>
@@ -62,7 +87,9 @@
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import type { PersonaStatus } from '@record-replay/shared';
+import { PERSONA_RELATIONS } from '@record-replay/shared';
 import { uploadFile } from '@/api/media';
+import type { PersonaInput } from '@/api/persona';
 import { createPersona, getPersona, updatePersona, listPersonas } from '@/api/persona';
 import { poll } from '@/utils/poll';
 import { useRecorder, isSampleLongEnough, MIN_SAMPLE_SECONDS } from '@/utils/recorder';
@@ -81,6 +108,8 @@ const isEdit = computed(() => !!editId.value);
 const avatarInput = ref<HTMLInputElement | null>(null);
 const avatarFile = ref<File | null>(null);
 const avatarPreview = ref('');
+const name = ref('');
+const relation = ref('');
 const submitting = ref(false);
 const status = ref<PersonaStatus | ''>('');
 const confirmVisible = ref(false);
@@ -139,19 +168,14 @@ function goBack() {
 }
 
 function validate(): boolean {
-  if (isEdit.value) {
-    // 编辑模式：至少改了头像或录音
-    if (!avatarFile.value && !tempFile.value) {
-      toast('请修改头像或重新录音');
-      return false;
-    }
-  } else {
-    if (!avatarFile.value) return toast('请先选择照片'), false;
-    if (!tempFile.value) return toast('请先录制语音'), false;
-    if (!isSampleLongEnough(seconds.value)) {
-      toast(`录音太短，请至少录 ${MIN_SAMPLE_SECONDS} 秒`);
-      return false;
-    }
+  if (!name.value.trim()) return toast('请填写称呼或姓名'), false;
+  if (!relation.value) return toast('请选择关系'), false;
+  if (isEdit.value) return true;
+  if (!avatarFile.value) return toast('请先选择照片'), false;
+  if (!tempFile.value) return toast('请先录制语音'), false;
+  if (!isSampleLongEnough(seconds.value)) {
+    toast(`录音太短，请至少录 ${MIN_SAMPLE_SECONDS} 秒`);
+    return false;
   }
   return true;
 }
@@ -178,7 +202,12 @@ async function doCreate() {
       uploadFile(avatarFile.value!, 'file', avatarFile.value!.name),
       uploadFile(tempFile.value!, 'file', tempFile.value!.name),
     ]);
-    const persona = await createPersona(avatar.url, voice.url);
+    const persona = await createPersona({
+      name: name.value.trim(),
+      relation: relation.value,
+      avatarUrl: avatar.url,
+      voiceSampleUrl: voice.url,
+    });
     session.setPersona(persona.id);
     status.value = persona.status;
 
@@ -205,7 +234,10 @@ async function doCreate() {
 async function doUpdate() {
   submitting.value = true;
   try {
-    const patch: { avatarUrl?: string; voiceSampleUrl?: string } = {};
+    const patch: Partial<PersonaInput> = {
+      name: name.value.trim(),
+      relation: relation.value,
+    };
     if (avatarFile.value) {
       const avatar = await uploadFile(avatarFile.value, 'file', avatarFile.value.name);
       patch.avatarUrl = avatar.url;
@@ -231,6 +263,8 @@ onMounted(async () => {
   try {
     const p = await getPersona(editId.value);
     avatarPreview.value = absoluteUrl(p.avatarUrl);
+    name.value = p.name ?? '';
+    relation.value = p.relation ?? '';
   } catch (e) {
     toast((e as Error).message);
     router.replace('/home');
@@ -270,6 +304,26 @@ onMounted(async () => {
   color: var(--text-dim);
   margin: 4px 0 14px;
   line-height: 1.5;
+}
+.field {
+  margin-bottom: 14px;
+}
+.field:last-child {
+  margin-bottom: 0;
+}
+.field-label {
+  display: block;
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+.select {
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-dim) 50%),
+    linear-gradient(135deg, var(--text-dim) 50%, transparent 50%);
+  background-position: calc(100% - 20px) center, calc(100% - 15px) center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
 }
 .avatar-zone {
   width: 100%;

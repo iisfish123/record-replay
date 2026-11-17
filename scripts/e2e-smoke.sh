@@ -23,7 +23,7 @@ echo "token 获取成功"
 echo "3) 创建人格（后台触发音色训练）"
 PID=$(curl -sf -X POST "$API/personas" -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d "{\"avatarUrl\":\"$AVATAR\",\"voiceSampleUrl\":\"$VOICE\"}" | json "['id']")
+  -d "{\"name\":\"冒烟测试\",\"relation\":\"其他\",\"avatarUrl\":\"$AVATAR\",\"voiceSampleUrl\":\"$VOICE\"}" | json "['id']")
 echo "personaId=$PID"
 
 echo "4) 等待音色训练完成"

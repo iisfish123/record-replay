@@ -25,7 +25,10 @@
       <div v-for="p in personas" :key="p.id" class="card metal">
         <img class="avatar" :src="absoluteUrl(p.avatarUrl)" @click="enterChat(p)" />
         <div class="info" @click="enterChat(p)">
-          <div class="name">亲人 {{ indexLabel(p.id) }}</div>
+          <div class="name">
+            {{ p.name || '未命名' }}
+            <span v-if="p.relation" class="relation-tag">{{ p.relation }}</span>
+          </div>
           <div class="status" :class="p.status">
             <span class="status-dot"></span>
             {{ statusText(p.status) }}
@@ -90,11 +93,6 @@ function statusText(s: string): string {
     case 'failed': return '创建失败';
     default: return s;
   }
-}
-
-function indexLabel(id: string): string {
-  const i = personas.value.findIndex((p) => p.id === id);
-  return String(personas.value.length - i).padStart(2, '0');
 }
 
 function enterChat(p: PersonaDto) {
@@ -191,6 +189,18 @@ onMounted(load);
 .name {
   font-size: 16px;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.relation-tag {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--primary);
+  background: var(--primary-soft);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1px 8px;
 }
 .status {
   display: flex;

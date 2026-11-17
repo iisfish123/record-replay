@@ -7,6 +7,12 @@ import { SMS_CLIENT } from '../src/auth/sms.service';
 import { VOICE_PROVIDER } from '../src/providers/voice/voice.provider';
 
 const VOICE_SAMPLE = `data:audio/mp3;base64,${Buffer.from('audio').toString('base64')}`;
+const PERSONA_BODY = {
+  name: '爸爸',
+  relation: '父亲',
+  avatarUrl: 'http://x/a.jpg',
+  voiceSampleUrl: VOICE_SAMPLE,
+};
 
 describe('persona e2e', () => {
   let app: INestApplication;
@@ -47,21 +53,54 @@ describe('persona e2e', () => {
     await app.close();
   });
 
-  it('创建人格 -> status=pending', async () => {
+  it('创建人格 -> status=pending，并保存昵称与关系', async () => {
     const res = await request(app.getHttpServer())
       .post('/personas')
       .set('Authorization', `Bearer ${token}`)
-      .send({ avatarUrl: 'http://x/a.jpg', voiceSampleUrl: VOICE_SAMPLE })
+      .send(PERSONA_BODY)
       .expect(201);
     expect(res.body.status).toBe('pending');
     expect(res.body.id).toBeTruthy();
+    expect(res.body.name).toBe('爸爸');
+    expect(res.body.relation).toBe('父亲');
+  });
+
+  it('创建人格缺少昵称或关系 -> 400', async () => {
+    await request(app.getHttpServer())
+      .post('/personas')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ relation: '父亲', avatarUrl: 'http://x/a.jpg', voiceSampleUrl: VOICE_SAMPLE })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post('/personas')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: '爸爸', relation: '邻居', avatarUrl: 'http://x/a.jpg', voiceSampleUrl: VOICE_SAMPLE })
+      .expect(400);
+  });
+
+  it('编辑昵称与关系 -> 200 且仅更新指定字段', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/personas')
+      .set('Authorization', `Bearer ${token}`)
+      .send(PERSONA_BODY)
+      .expect(201);
+
+    const res = await request(app.getHttpServer())
+      .put(`/personas/${created.body.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: '老妈', relation: '母亲' })
+      .expect(200);
+
+    expect(res.body.name).toBe('老妈');
+    expect(res.body.relation).toBe('母亲');
+    expect(res.body.avatarUrl).toBe(PERSONA_BODY.avatarUrl);
   });
 
   it('创建后异步完成音色训练 -> status=ready 且带 speakerId', async () => {
     const created = await request(app.getHttpServer())
       .post('/personas')
       .set('Authorization', `Bearer ${token}`)
-      .send({ avatarUrl: 'http://x/a.jpg', voiceSampleUrl: VOICE_SAMPLE })
+      .send(PERSONA_BODY)
       .expect(201);
 
     let body: any;
@@ -83,7 +122,7 @@ describe('persona e2e', () => {
     const created = await request(app.getHttpServer())
       .post('/personas')
       .set('Authorization', `Bearer ${token}`)
-      .send({ avatarUrl: 'http://x/a.jpg', voiceSampleUrl: VOICE_SAMPLE });
+      .send(PERSONA_BODY);
     const res = await request(app.getHttpServer())
       .get(`/personas/${created.body.id}`)
       .set('Authorization', `Bearer ${token}`)
@@ -110,7 +149,7 @@ describe('persona e2e', () => {
     const created = await request(app.getHttpServer())
       .post('/personas')
       .set('Authorization', `Bearer ${token}`)
-      .send({ avatarUrl: 'http://x/a.jpg', voiceSampleUrl: VOICE_SAMPLE })
+      .send(PERSONA_BODY)
       .expect(201);
     await request(app.getHttpServer())
       .get(`/personas/${created.body.id}`)

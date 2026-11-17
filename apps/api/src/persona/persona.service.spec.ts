@@ -2,6 +2,8 @@ import { ConflictException } from '@nestjs/common';
 import { PersonaService } from './persona.service';
 import type { VoiceProvider } from '../providers/voice/voice.provider';
 
+const INPUT = { name: '爸爸', relation: '父亲', avatarUrl: '/a.jpg', voiceSampleUrl: '/v.mp3' };
+
 function makeRepo() {
   return {
     findOne: jest.fn(),
@@ -37,10 +39,12 @@ describe('PersonaService', () => {
       const voice = makeVoice('clone');
       const service = new PersonaService(repo as any, voice);
 
-      const persona = await service.create('u1', '/a.jpg', '/v.mp3');
+      const persona = await service.create('u1', INPUT);
 
       expect(persona.speakerId).toBe('custom_zh_old');
       expect(persona.status).toBe('ready');
+      expect(persona.name).toBe('爸爸');
+      expect(persona.relation).toBe('父亲');
       expect(voice.train).not.toHaveBeenCalled();
     });
 
@@ -55,7 +59,7 @@ describe('PersonaService', () => {
       const voice = makeVoice('clone');
       const service = new PersonaService(repo as any, voice);
 
-      await service.create('u1', '/a.jpg', '/v.mp3');
+      await service.create('u1', INPUT);
 
       expect(repo.findOne).toHaveBeenCalledWith({
         where: { userId: 'u1', status: 'ready' },
@@ -71,7 +75,7 @@ describe('PersonaService', () => {
       const voice = makeVoice('clone');
       const service = new PersonaService(repo as any, voice);
 
-      await expect(service.create('u1', '/a.jpg', '/v.mp3')).rejects.toBeInstanceOf(
+      await expect(service.create('u1', INPUT)).rejects.toBeInstanceOf(
         ConflictException,
       );
       expect(voice.train).not.toHaveBeenCalled();
@@ -86,7 +90,7 @@ describe('PersonaService', () => {
         .spyOn(service as any, 'trainVoice')
         .mockResolvedValue(undefined);
 
-      const persona = await service.create('u1', '/a.jpg', '/v.mp3');
+      const persona = await service.create('u1', INPUT);
 
       expect(persona.status).toBe('pending');
       expect(trainSpy).toHaveBeenCalled();
@@ -183,6 +187,26 @@ describe('PersonaService', () => {
       expect(persona.voiceSampleUrl).toBe('/old.mp3');
       expect(repo.save).toHaveBeenCalled();
       expect(voice.train).not.toHaveBeenCalled();
+    });
+
+    it('update 可单独修改昵称与关系，且不影响其他字段', async () => {
+      const repo = makeRepo();
+      repo.findOne.mockResolvedValue({
+        id: 'p1',
+        userId: 'u1',
+        name: '爸爸',
+        relation: '父亲',
+        avatarUrl: '/old.jpg',
+        voiceSampleUrl: '/old.mp3',
+      });
+      const service = new PersonaService(repo as any, makeVoice('clone'));
+
+      const persona = await service.update('p1', 'u1', { name: '老爸', relation: '爷爷' });
+
+      expect(persona.name).toBe('老爸');
+      expect(persona.relation).toBe('爷爷');
+      expect(persona.avatarUrl).toBe('/old.jpg');
+      expect(persona.voiceSampleUrl).toBe('/old.mp3');
     });
 
     it('update 非本人人格抛 Forbidden', async () => {

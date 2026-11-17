@@ -8,6 +8,14 @@ export class Persona {
   @Column({ type: 'char', length: 36 })
   userId: string;
 
+  /** 昵称或姓名。历史数据可能为空。 */
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  name: string | null;
+
+  /** 与用户的关系，取自 PERSONA_RELATIONS 预设。 */
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  relation: string | null;
+
   @Column({ type: 'varchar', length: 512 })
   avatarUrl: string;
 

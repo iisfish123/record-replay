@@ -5,9 +5,19 @@ import {
   LoginSchema,
   AskSchema,
   CreatePersonaSchema,
+  UpdatePersonaSchema,
+  PersonaRelationSchema,
+  PERSONA_RELATIONS,
   PersonaStatusSchema,
   TaskStatusSchema,
 } from './dto';
+
+const basePersona = {
+  name: '爸爸',
+  relation: '父亲',
+  avatarUrl: 'http://x/a.jpg',
+  voiceSampleUrl: 'http://x/v.mp3',
+};
 
 describe('shared dto', () => {
   it('接受合法手机号', () => {
@@ -36,16 +46,29 @@ describe('shared dto', () => {
     expect(AskSchema.safeParse({ question: 'x'.repeat(201) }).success).toBe(false);
   });
 
-  it('创建人格需 avatarUrl 与 voiceSampleUrl 且不超过 512 字', () => {
-    expect(
-      CreatePersonaSchema.safeParse({ avatarUrl: 'http://x/a.jpg', voiceSampleUrl: 'http://x/v.mp3' })
-        .success,
-    ).toBe(true);
+  it('创建人格需 name/relation/avatarUrl/voiceSampleUrl，URL 不超过 512 字', () => {
+    expect(CreatePersonaSchema.safeParse(basePersona).success).toBe(true);
+    expect(CreatePersonaSchema.safeParse({ ...basePersona, name: '' }).success).toBe(false);
+    expect(CreatePersonaSchema.safeParse({ ...basePersona, name: 'x'.repeat(21) }).success).toBe(false);
+    expect(CreatePersonaSchema.safeParse({ ...basePersona, relation: '邻居' }).success).toBe(false);
+    expect(CreatePersonaSchema.safeParse({ ...basePersona, avatarUrl: 'x'.repeat(513) }).success).toBe(
+      false,
+    );
     expect(CreatePersonaSchema.safeParse({ avatarUrl: 'http://x/a.jpg' }).success).toBe(false);
-    expect(
-      CreatePersonaSchema.safeParse({ avatarUrl: 'x'.repeat(513), voiceSampleUrl: 'http://x/v.mp3' })
-        .success,
-    ).toBe(false);
+  });
+
+  it('关系仅接受预设亲属称谓', () => {
+    expect(PERSONA_RELATIONS).toContain('父亲');
+    expect(PERSONA_RELATIONS).toContain('女儿');
+    expect(PersonaRelationSchema.safeParse('母亲').success).toBe(true);
+    expect(PersonaRelationSchema.safeParse('朋友').success).toBe(false);
+  });
+
+  it('更新人格时各字段均可选', () => {
+    expect(UpdatePersonaSchema.safeParse({}).success).toBe(true);
+    expect(UpdatePersonaSchema.safeParse({ name: '妈妈' }).success).toBe(true);
+    expect(UpdatePersonaSchema.safeParse({ relation: '母亲' }).success).toBe(true);
+    expect(UpdatePersonaSchema.safeParse({ relation: '室友' }).success).toBe(false);
   });
 
   it('人物状态枚举完整', () => {

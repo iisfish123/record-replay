@@ -7,13 +7,23 @@ import { createPersona, getPersona, listPersonas, updatePersona, deletePersona }
 const mocked = request as unknown as ReturnType<typeof vi.fn>;
 
 describe('persona api', () => {
-  it('createPersona 传 avatarUrl 与 voiceSampleUrl', async () => {
+  it('createPersona 传 name/relation/avatarUrl/voiceSampleUrl', async () => {
     mocked.mockResolvedValue({ id: 'p1', status: 'pending' });
-    const res = await createPersona('/static/uploads/a.jpg', '/static/uploads/v.mp3');
+    const res = await createPersona({
+      name: '爸爸',
+      relation: '父亲',
+      avatarUrl: '/static/uploads/a.jpg',
+      voiceSampleUrl: '/static/uploads/v.mp3',
+    });
     expect(mocked).toHaveBeenCalledWith({
       url: '/personas',
       method: 'POST',
-      data: { avatarUrl: '/static/uploads/a.jpg', voiceSampleUrl: '/static/uploads/v.mp3' },
+      data: {
+        name: '爸爸',
+        relation: '父亲',
+        avatarUrl: '/static/uploads/a.jpg',
+        voiceSampleUrl: '/static/uploads/v.mp3',
+      },
     });
     expect(res.id).toBe('p1');
   });

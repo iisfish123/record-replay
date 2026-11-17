@@ -4,6 +4,8 @@ import { request } from './request';
 export interface PersonaDto {
   id: string;
   userId: string;
+  name: string | null;
+  relation: string | null;
   avatarUrl: string;
   voiceSampleUrl: string;
   speakerId: string | null;
@@ -12,8 +14,16 @@ export interface PersonaDto {
   createdAt: string;
 }
 
-export function createPersona(avatarUrl: string, voiceSampleUrl: string): Promise<PersonaDto> {
-  return request({ url: '/personas', method: 'POST', data: { avatarUrl, voiceSampleUrl } });
+/** 新建亲人必填字段。 */
+export interface PersonaInput {
+  name: string;
+  relation: string;
+  avatarUrl: string;
+  voiceSampleUrl: string;
+}
+
+export function createPersona(input: PersonaInput): Promise<PersonaDto> {
+  return request({ url: '/personas', method: 'POST', data: { ...input } });
 }
 
 export function getPersona(id: string): Promise<PersonaDto> {
@@ -24,10 +34,7 @@ export function listPersonas(): Promise<PersonaDto[]> {
   return request({ url: '/personas' });
 }
 
-export function updatePersona(
-  id: string,
-  patch: { avatarUrl?: string; voiceSampleUrl?: string },
-): Promise<PersonaDto> {
+export function updatePersona(id: string, patch: Partial<PersonaInput>): Promise<PersonaDto> {
   return request({ url: `/personas/${id}`, method: 'PUT', data: patch });
 }
 

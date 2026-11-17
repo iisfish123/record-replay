@@ -18,6 +18,12 @@ function buildSpeakerId(): string {
   return `custom_zh_rr_${randomBytes(6).toString('hex')}`;
 }
 
+/** 新建亲人档案时必填的业务字段。 */
+export type PersonaInput = Pick<Persona, 'name' | 'relation' | 'avatarUrl' | 'voiceSampleUrl'>;
+
+/** 可在编辑时单独修改的字段。 */
+export type PersonaPatch = Partial<PersonaInput>;
+
 @Injectable()
 export class PersonaService {
   private readonly logger = new Logger(PersonaService.name);
@@ -27,7 +33,7 @@ export class PersonaService {
     @Inject(VOICE_PROVIDER) private readonly voice: VoiceProvider,
   ) {}
 
-  async create(userId: string, avatarUrl: string, voiceSampleUrl: string): Promise<Persona> {
+  async create(userId: string, input: PersonaInput): Promise<Persona> {
     if (this.voice.mode === 'clone') {
       // 复刻音色按「音色个数」一次性计费（火山 138 元/个，MiniMax 9.9 元/个）。同一用户复用已有音色，避免重复扣费。
       const reusable = await this.repo.findOne({
@@ -39,8 +45,7 @@ export class PersonaService {
         return this.repo.save(
           this.repo.create({
             userId,
-            avatarUrl,
-            voiceSampleUrl,
+            ...input,
             status: 'ready',
             speakerId: reusable.speakerId,
           }),
@@ -51,7 +56,7 @@ export class PersonaService {
     }
 
     const persona = await this.repo.save(
-      this.repo.create({ userId, avatarUrl, voiceSampleUrl, status: 'pending' }),
+      this.repo.create({ userId, ...input, status: 'pending' }),
     );
     void this.trainVoice(persona).catch((err) => {
       this.logger.error(`人格 ${persona.id} 音色训练失败: ${err.message}`);
@@ -72,11 +77,13 @@ export class PersonaService {
   }
 
   /**
-   * 修改亲人资料。仅更新头像/语音样本字段，不重新训练音色——
+   * 修改亲人资料。昵称/关系/头像/语音样本均可单独更新，不重新训练音色——
    * 音色克隆按个数计费（MiniMax 9.9 元/个），同一用户复用已有 speakerId。
    */
-  async update(id: string, userId: string, patch: Partial<Pick<Persona, 'avatarUrl' | 'voiceSampleUrl'>>): Promise<Persona> {
+  async update(id: string, userId: string, patch: PersonaPatch): Promise<Persona> {
     const persona = await this.findOwned(id, userId);
+    if (patch.name !== undefined) persona.name = patch.name;
+    if (patch.relation !== undefined) persona.relation = patch.relation;
     if (patch.avatarUrl) persona.avatarUrl = patch.avatarUrl;
     if (patch.voiceSampleUrl) persona.voiceSampleUrl = patch.voiceSampleUrl;
     return this.repo.save(persona);

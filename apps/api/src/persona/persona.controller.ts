@@ -12,7 +12,7 @@ export class PersonaController {
   async create(@Req() req: any, @Body() body: unknown) {
     const parsed = CreatePersonaSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues[0].message);
-    return this.personas.create(req.user.sub, parsed.data.avatarUrl, parsed.data.voiceSampleUrl);
+    return this.personas.create(req.user.sub, parsed.data);
   }
 
   @Get()

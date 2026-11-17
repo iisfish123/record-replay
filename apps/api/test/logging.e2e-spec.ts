@@ -63,7 +63,7 @@ describe('日志系统 (e2e)', () => {
     const persona = await request(http)
       .post('/personas')
       .set('Authorization', `Bearer ${token}`)
-      .send({ avatarUrl: 'http://x/a.jpg', voiceSampleUrl: VOICE_SAMPLE });
+      .send({ name: '爸爸', relation: '父亲', avatarUrl: 'http://x/a.jpg', voiceSampleUrl: VOICE_SAMPLE });
     personaId = persona.body.id;
 
     for (let i = 0; i < 30; i++) {
