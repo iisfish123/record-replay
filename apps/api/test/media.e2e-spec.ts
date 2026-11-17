@@ -1,10 +1,18 @@
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import sharp from 'sharp';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { AppModule } from '../src/app.module';
 import { SMS_CLIENT } from '../src/auth/sms.service';
+
+/** 用 sharp 生成一张合法的 1x1 JPEG，避免硬编码损坏的 base64。 */
+function makeJpeg(): Promise<Buffer> {
+  return sharp({ create: { width: 1, height: 1, channels: 3, background: '#ffffff' } })
+    .jpeg()
+    .toBuffer();
+}
 
 describe('media e2e', () => {
   let app: INestApplication;
@@ -36,7 +44,7 @@ describe('media e2e', () => {
     const res = await request(app.getHttpServer())
       .post('/media/upload')
       .set('Authorization', `Bearer ${token}`)
-      .attach('file', Buffer.from('fake-image-bytes'), 'avatar.jpg')
+      .attach('file', await makeJpeg(), 'avatar.jpg')
       .expect(201);
     expect(res.body.url).toMatch(/^https?:\/\/.+\/static\/uploads\/.+/);
     const filename = res.body.url.split('/').pop();

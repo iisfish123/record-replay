@@ -19,14 +19,18 @@ export const RENDER_PROVIDER = Symbol('RENDER_PROVIDER');
 export interface RenderQueryResult {
   status: 'in_queue' | 'generating' | 'done' | 'failed';
   videoUrl: string | null;
+  /** 失败原因（MiniMax 返回的 error.message 等），仅 status='failed' 时可能有值。 */
+  error?: string;
 }
 
 export interface RenderProvider {
   /**
    * @param durationSeconds 期望的视频时长（秒）。火山 OmniHuman 自动跟随音频长度，可忽略；
    *   MiniMax 必须显式指定，否则长回答会被截断。
+   * @param answerText 要说的话。火山 OmniHuman 直接用参考音频的语音内容，可忽略；
+   *   MiniMax H3 的参考音频只提供音色，对话内容必须由 prompt 里的 <d> 标签决定。
    */
-  submit(imageUrl: string, audioUrl: string, durationSeconds?: number): Promise<string>;
+  submit(imageUrl: string, audioUrl: string, durationSeconds?: number, answerText?: string): Promise<string>;
   query(taskId: string): Promise<RenderQueryResult>;
 }
 

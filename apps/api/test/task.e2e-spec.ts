@@ -90,7 +90,13 @@ describe('task e2e', () => {
     expect(body.status).toBe('done');
     expect(body.videoUrl).toMatch(/\/static\/videos\//);
     expect(body.answerText).toBe('孩子，我很好，别挂念。');
-    // 第 3 个参数为语音实际时长（秒），MiniMax 依赖它对齐口型视频长度
-    expect(render.submit).toHaveBeenCalledWith(expect.any(String), expect.any(String), 5);
+    // 第 3 个参数为语音实际时长（秒），MiniMax 依赖它对齐口型视频长度；
+    // 第 4 个参数为回答文本，MiniMax r2va 模式下需放入 <d> 标签决定语音内容
+    expect(render.submit).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      5,
+      '孩子，我很好，别挂念。',
+    );
   });
 });

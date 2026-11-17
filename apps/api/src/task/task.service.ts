@@ -85,6 +85,7 @@ export class TaskService {
           persona.avatarUrl,
           audioUrl,
           Math.ceil(durationMs / 1000) || undefined,
+          answerText,
         );
         this.tracer.renderSubmitted(taskId, persona.id, Date.now() - submitStarted, remoteTaskId);
 
@@ -116,7 +117,7 @@ export class TaskService {
     for (let i = 0; i < RENDER_MAX_ROUNDS; i++) {
       const result = await this.render.query(remoteTaskId);
       this.tracer.renderPolled(taskId, personaId, i + 1, result.status);
-      if (result.status === 'failed') throw new Error('视频生成失败');
+      if (result.status === 'failed') throw new Error(result.error ? `视频生成失败: ${result.error}` : '视频生成失败');
       if (result.status === 'done' && result.videoUrl) {
         const res = await fetch(result.videoUrl);
         if (!res.ok) throw new Error(`下载视频失败: ${res.status}`);
